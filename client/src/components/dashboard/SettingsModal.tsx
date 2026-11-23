@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { CandleColorSettings } from '../chart/types';
+import { TradingViewColorPicker } from './TradingViewColorPicker';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -9,8 +10,6 @@ interface SettingsModalProps {
   onResetCandleColors: () => void;
   apiStatus: 'online' | 'offline' | 'loading';
   wsStatus: 'online' | 'offline' | 'loading';
-  brokerName?: string;
-  appId?: string;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -20,9 +19,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onUpdateCandleColors,
   onResetCandleColors,
   apiStatus,
-  wsStatus,
-  brokerName = 'FYERS API v3',
-  appId = 'R3ZD795FUR-100'
+  wsStatus
 }) => {
   const [activeTab, setActiveTab] = useState<'chart' | 'system'>('chart');
 
@@ -47,7 +44,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         boxShadow: '0 20px 40px rgba(0,0,0,0.9)',
         display: 'flex',
         flexDirection: 'column',
-        overflow: 'hidden'
+        overflow: 'visible'
       }}>
         {/* Header */}
         <div style={{
@@ -56,7 +53,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          backgroundColor: '#050505'
+          backgroundColor: '#050505',
+          borderTopLeftRadius: '6px',
+          borderTopRightRadius: '6px'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
             <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#ffffff', letterSpacing: '0.05em' }}>
@@ -124,7 +123,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         {/* Body Content */}
-        <div style={{ padding: '1.2rem', display: 'flex', flexDirection: 'column', gap: '1rem', maxHeight: '420px', overflowY: 'auto' }}>
+        <div style={{ padding: '1.2rem', display: 'flex', flexDirection: 'column', gap: '1rem', minHeight: '260px' }}>
           {activeTab === 'chart' ? (
             <>
               {/* Up Candle Customization */}
@@ -132,50 +131,27 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 backgroundColor: '#050505',
                 border: '1px solid #1a1a1a',
                 borderRadius: '4px',
-                padding: '0.75rem'
+                padding: '0.85rem'
               }}>
-                <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#e5e7eb', marginBottom: '0.6rem', letterSpacing: '0.05em' }}>
+                <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#e5e7eb', marginBottom: '0.75rem', letterSpacing: '0.05em' }}>
                   UP CANDLE (BULLISH)
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem' }}>
-                  <div>
-                    <label style={{ fontSize: '0.68rem', color: '#737373', display: 'block', marginBottom: '4px' }}>Body</label>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <input
-                        type="color"
-                        value={candleColors.upBodyColor}
-                        onChange={(e) => onUpdateCandleColors({ ...candleColors, upBodyColor: e.target.value })}
-                        style={{ width: '28px', height: '24px', border: '1px solid #262626', borderRadius: '2px', cursor: 'pointer', background: 'none' }}
-                      />
-                      <span style={{ fontSize: '0.68rem', fontFamily: 'monospace', color: '#CCCCCC' }}>{candleColors.upBodyColor}</span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label style={{ fontSize: '0.68rem', color: '#737373', display: 'block', marginBottom: '4px' }}>Border</label>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <input
-                        type="color"
-                        value={candleColors.upBorderColor}
-                        onChange={(e) => onUpdateCandleColors({ ...candleColors, upBorderColor: e.target.value })}
-                        style={{ width: '28px', height: '24px', border: '1px solid #262626', borderRadius: '2px', cursor: 'pointer', background: 'none' }}
-                      />
-                      <span style={{ fontSize: '0.68rem', fontFamily: 'monospace', color: '#CCCCCC' }}>{candleColors.upBorderColor}</span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label style={{ fontSize: '0.68rem', color: '#737373', display: 'block', marginBottom: '4px' }}>Wick</label>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <input
-                        type="color"
-                        value={candleColors.upWickColor}
-                        onChange={(e) => onUpdateCandleColors({ ...candleColors, upWickColor: e.target.value })}
-                        style={{ width: '28px', height: '24px', border: '1px solid #262626', borderRadius: '2px', cursor: 'pointer', background: 'none' }}
-                      />
-                      <span style={{ fontSize: '0.68rem', fontFamily: 'monospace', color: '#CCCCCC' }}>{candleColors.upWickColor}</span>
-                    </div>
-                  </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.85rem' }}>
+                  <TradingViewColorPicker
+                    label="Body"
+                    color={candleColors.upBodyColor}
+                    onChange={(val) => onUpdateCandleColors({ ...candleColors, upBodyColor: val })}
+                  />
+                  <TradingViewColorPicker
+                    label="Border"
+                    color={candleColors.upBorderColor}
+                    onChange={(val) => onUpdateCandleColors({ ...candleColors, upBorderColor: val })}
+                  />
+                  <TradingViewColorPicker
+                    label="Wick"
+                    color={candleColors.upWickColor}
+                    onChange={(val) => onUpdateCandleColors({ ...candleColors, upWickColor: val })}
+                  />
                 </div>
               </div>
 
@@ -184,59 +160,37 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 backgroundColor: '#050505',
                 border: '1px solid #1a1a1a',
                 borderRadius: '4px',
-                padding: '0.75rem'
+                padding: '0.85rem'
               }}>
-                <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#e5e7eb', marginBottom: '0.6rem', letterSpacing: '0.05em' }}>
+                <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#e5e7eb', marginBottom: '0.75rem', letterSpacing: '0.05em' }}>
                   DOWN CANDLE (BEARISH)
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem' }}>
-                  <div>
-                    <label style={{ fontSize: '0.68rem', color: '#737373', display: 'block', marginBottom: '4px' }}>Body</label>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <input
-                        type="color"
-                        value={candleColors.downBodyColor}
-                        onChange={(e) => onUpdateCandleColors({ ...candleColors, downBodyColor: e.target.value })}
-                        style={{ width: '28px', height: '24px', border: '1px solid #262626', borderRadius: '2px', cursor: 'pointer', background: 'none' }}
-                      />
-                      <span style={{ fontSize: '0.68rem', fontFamily: 'monospace', color: '#CCCCCC' }}>{candleColors.downBodyColor}</span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label style={{ fontSize: '0.68rem', color: '#737373', display: 'block', marginBottom: '4px' }}>Border</label>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <input
-                        type="color"
-                        value={candleColors.downBorderColor}
-                        onChange={(e) => onUpdateCandleColors({ ...candleColors, downBorderColor: e.target.value })}
-                        style={{ width: '28px', height: '24px', border: '1px solid #262626', borderRadius: '2px', cursor: 'pointer', background: 'none' }}
-                      />
-                      <span style={{ fontSize: '0.68rem', fontFamily: 'monospace', color: '#CCCCCC' }}>{candleColors.downBorderColor}</span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label style={{ fontSize: '0.68rem', color: '#737373', display: 'block', marginBottom: '4px' }}>Wick</label>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <input
-                        type="color"
-                        value={candleColors.downWickColor}
-                        onChange={(e) => onUpdateCandleColors({ ...candleColors, downWickColor: e.target.value })}
-                        style={{ width: '28px', height: '24px', border: '1px solid #262626', borderRadius: '2px', cursor: 'pointer', background: 'none' }}
-                      />
-                      <span style={{ fontSize: '0.68rem', fontFamily: 'monospace', color: '#CCCCCC' }}>{candleColors.downWickColor}</span>
-                    </div>
-                  </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.85rem' }}>
+                  <TradingViewColorPicker
+                    label="Body"
+                    color={candleColors.downBodyColor}
+                    onChange={(val) => onUpdateCandleColors({ ...candleColors, downBodyColor: val })}
+                  />
+                  <TradingViewColorPicker
+                    label="Border"
+                    color={candleColors.downBorderColor}
+                    onChange={(val) => onUpdateCandleColors({ ...candleColors, downBorderColor: val })}
+                  />
+                  <TradingViewColorPicker
+                    label="Wick"
+                    color={candleColors.downWickColor}
+                    onChange={(val) => onUpdateCandleColors({ ...candleColors, downWickColor: val })}
+                  />
                 </div>
               </div>
 
               {/* Reset to Defaults Action */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '0.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '0.25rem' }}>
                 <button
+                  type="button"
                   onClick={onResetCandleColors}
                   style={{
-                    padding: '5px 12px',
+                    padding: '6px 14px',
                     fontSize: '0.72rem',
                     backgroundColor: '#171717',
                     border: '1px solid #262626',
@@ -257,10 +211,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 backgroundColor: '#050505',
                 border: '1px solid #1a1a1a',
                 borderRadius: '4px',
-                padding: '0.85rem',
+                padding: '1rem',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '0.6rem'
+                gap: '0.75rem'
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem' }}>
                   <span style={{ color: '#737373' }}>API Server:</span>
@@ -289,16 +243,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem' }}>
-                  <span style={{ color: '#737373' }}>Broker Data Feed:</span>
-                  <span style={{ color: '#5F7A9A', fontWeight: 600 }}>{brokerName}</span>
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem' }}>
-                  <span style={{ color: '#737373' }}>Broker App ID:</span>
-                  <span style={{ fontFamily: 'monospace', color: '#CCCCCC' }}>{appId}</span>
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem' }}>
                   <span style={{ color: '#737373' }}>Exchange:</span>
                   <span style={{ color: '#ffffff' }}>NSE (National Stock Exchange of India)</span>
                 </div>
@@ -313,9 +257,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           borderTop: '1px solid #1a1a1a',
           backgroundColor: '#050505',
           display: 'flex',
-          justifyContent: 'flex-end'
+          justifyContent: 'flex-end',
+          borderBottomLeftRadius: '6px',
+          borderBottomRightRadius: '6px'
         }}>
           <button
+            type="button"
             onClick={onClose}
             style={{
               padding: '5px 16px',

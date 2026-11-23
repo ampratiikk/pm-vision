@@ -346,6 +346,9 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
           timeVisible: true,
           secondsVisible: false
         },
+        localization: {
+          dateFormat: 'dd MMM yyyy'
+        },
         ...chartOptions
       });
 

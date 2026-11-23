@@ -100,6 +100,10 @@ export function App() {
     y: 0
   });
 
+  // TradingView-style direct keyboard interval jump
+  const [keyIntervalBuffer, setKeyIntervalBuffer] = useState<string>('');
+  const [keyIntervalVisible, setKeyIntervalVisible] = useState<boolean>(false);
+
   // Pinned Timeframes state (persisted to localStorage)
   const [pinnedTimeframes, setPinnedTimeframes] = useState<string[]>(() => {
     try {
@@ -229,6 +233,82 @@ export function App() {
     window.addEventListener('click', handleWindowClick);
     return () => window.removeEventListener('click', handleWindowClick);
   }, []);
+
+  // TradingView-style direct keyboard interval jump
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      if (isSettingsOpen) return;
+
+      if (!keyIntervalVisible) {
+        if (e.key >= '1' && e.key <= '9') {
+          e.preventDefault();
+          setKeyIntervalBuffer(e.key);
+          setKeyIntervalVisible(true);
+        }
+        return;
+      }
+
+      // Interval buffer is active
+      if (e.key >= '0' && e.key <= '9') {
+        e.preventDefault();
+        setKeyIntervalBuffer((prev) => (prev.length < 4 ? prev + e.key : prev));
+      } else if (e.key === 'Backspace') {
+        e.preventDefault();
+        setKeyIntervalBuffer((prev) => {
+          const next = prev.slice(0, -1);
+          if (next.length === 0) {
+            setKeyIntervalVisible(false);
+          }
+          return next;
+        });
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (keyIntervalBuffer) {
+          const num = parseInt(keyIntervalBuffer, 10);
+          if (num > 0) {
+            let targetTf = `${num}m`;
+            if (num === 60) targetTf = '1H';
+            else if (num === 120) targetTf = '2H';
+            else if (num === 240) targetTf = '4H';
+
+            handleTimeframeChange(targetTf);
+          }
+        }
+        setKeyIntervalVisible(false);
+        setKeyIntervalBuffer('');
+      } else {
+        // Any other key or Escape cancels immediately and vanishes
+        setKeyIntervalVisible(false);
+        setKeyIntervalBuffer('');
+      }
+    };
+
+    const handleWindowMouseDown = () => {
+      // Clicking anywhere on the screen cancels immediately
+      if (keyIntervalVisible) {
+        setKeyIntervalVisible(false);
+        setKeyIntervalBuffer('');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('mousedown', handleWindowMouseDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('mousedown', handleWindowMouseDown);
+    };
+  }, [keyIntervalVisible, keyIntervalBuffer, isSettingsOpen, handleTimeframeChange]);
 
   // Check market session every 30 seconds
   useEffect(() => {
@@ -401,106 +481,8 @@ export function App() {
         </div>
       </header>
 
-      {/* Main Workspace with Left Panel Navigation */}
+      {/* Main Workspace with Navigation Rail shifted to Right */}
       <div style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>
-        {/* ===================== LEFT PANEL (DASHBOARD, HEATMAP, SETTINGS) ===================== */}
-        <aside style={{
-          width: '44px',
-          borderRight: '1px solid #1a1a1a',
-          backgroundColor: '#050505',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '12px 0',
-          flexShrink: 0,
-          zIndex: 30
-        }}>
-          {/* Top of Left Panel: Main Dashboard and Heatmap immediately below it */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'center' }}>
-            {/* 1. Main Dashboard Icon */}
-            <button
-              onClick={() => setActivePage('dashboard')}
-              title="Main Dashboard"
-              style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '4px',
-                backgroundColor: activePage === 'dashboard' ? 'rgba(95, 122, 154, 0.2)' : 'transparent',
-                border: activePage === 'dashboard' ? '1px solid #5F7A9A' : '1px solid transparent',
-                color: activePage === 'dashboard' ? '#5F7A9A' : '#737373',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: 0,
-                transition: 'all 0.15s ease'
-              }}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="3" width="7" height="7"></rect>
-                <rect x="14" y="3" width="7" height="7"></rect>
-                <rect x="14" y="14" width="7" height="7"></rect>
-                <rect x="3" y="14" width="7" height="7"></rect>
-              </svg>
-            </button>
-
-            {/* 2. Heatmap Icon (Below Main Dashboard) */}
-            <button
-              onClick={() => setActivePage('heatmap')}
-              title="NIFTY 50 Heatmap"
-              style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '4px',
-                backgroundColor: activePage === 'heatmap' ? 'rgba(95, 122, 154, 0.2)' : 'transparent',
-                border: activePage === 'heatmap' ? '1px solid #5F7A9A' : '1px solid transparent',
-                color: activePage === 'heatmap' ? '#5F7A9A' : '#737373',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: 0,
-                transition: 'all 0.15s ease'
-              }}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="2" y="2" width="9" height="11" rx="1"></rect>
-                <rect x="13" y="2" width="9" height="6" rx="1"></rect>
-                <rect x="13" y="10" width="9" height="12" rx="1"></rect>
-                <rect x="2" y="15" width="9" height="7" rx="1"></rect>
-              </svg>
-            </button>
-          </div>
-
-          {/* Bottom of Left Panel: Settings Icon (Bottom Left Corner) */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <button
-              onClick={() => setIsSettingsOpen(true)}
-              title="Platform & Chart Settings (API, WS, Candle Colors)"
-              style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '4px',
-                backgroundColor: isSettingsOpen ? 'rgba(95, 122, 154, 0.2)' : 'transparent',
-                border: isSettingsOpen ? '1px solid #5F7A9A' : '1px solid transparent',
-                color: isSettingsOpen ? '#5F7A9A' : '#737373',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: 0,
-                transition: 'all 0.15s ease'
-              }}
-            >
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="3"></circle>
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-              </svg>
-            </button>
-          </div>
-        </aside>
-
         {/* Content Area */}
         {activePage === 'dashboard' ? (
           <>
@@ -525,9 +507,22 @@ export function App() {
                 flexShrink: 0
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', position: 'relative' }}>
-                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#CCCCCC', letterSpacing: '0.05em' }}>
-                    TIMEFRAME
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#ffffff', letterSpacing: '0.03em' }}>
+                      NIFTY 50
+                    </span>
+                    <span style={{
+                      fontSize: '0.62rem',
+                      fontWeight: 600,
+                      color: '#5F7A9A',
+                      backgroundColor: 'rgba(95, 122, 154, 0.15)',
+                      padding: '1px 5px',
+                      borderRadius: '2px',
+                      border: '1px solid rgba(95, 122, 154, 0.3)'
+                    }}>
+                      INDEX
+                    </span>
+                  </div>
 
                   {/* Pinned Timeframe Buttons */}
                   <div style={{ display: 'flex', gap: '2px', backgroundColor: '#0a0a0a', padding: '2px', borderRadius: '3px', border: '1px solid #1f1f1f', alignItems: 'center' }}>
@@ -746,6 +741,50 @@ export function App() {
                     wickDownColor: candleColors.downWickColor
                   }}
                 />
+
+                {/* Direct Keyboard Interval Jump Overlay (TradingView style) */}
+                {keyIntervalVisible && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '50%',
+                      left: '50%',
+                      transform: 'translate(-50%, -50%)',
+                      backgroundColor: 'rgba(8, 8, 8, 0.92)',
+                      backdropFilter: 'blur(10px)',
+                      border: '1px solid #5F7A9A',
+                      borderRadius: '8px',
+                      padding: '1.2rem 2.4rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: '0 16px 36px rgba(0, 0, 0, 0.9), 0 0 20px rgba(95, 122, 154, 0.3)',
+                      zIndex: 80,
+                      pointerEvents: 'none'
+                    }}
+                  >
+                    <div style={{
+                      fontSize: '48px',
+                      fontWeight: 700,
+                      color: '#5F7A9A',
+                      fontFamily: 'Quicksand, sans-serif',
+                      lineHeight: 1,
+                      letterSpacing: '0.02em'
+                    }}>
+                      {keyIntervalBuffer}m
+                    </div>
+                    <div style={{
+                      fontSize: '0.72rem',
+                      color: '#9CA3AF',
+                      marginTop: '8px',
+                      letterSpacing: '0.04em',
+                      fontWeight: 500
+                    }}>
+                      Press Enter to apply · Esc to cancel
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -891,6 +930,104 @@ export function App() {
             <NiftyHeatmap />
           </div>
         )}
+
+        {/* ===================== RIGHT NAVIGATION PANEL ===================== */}
+        <aside style={{
+          width: '44px',
+          borderLeft: '1px solid #1a1a1a',
+          backgroundColor: '#050505',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '12px 0',
+          flexShrink: 0,
+          zIndex: 30
+        }}>
+          {/* Top: Main Dashboard and Heatmap immediately below it */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'center' }}>
+            {/* 1. Main Dashboard Icon */}
+            <button
+              onClick={() => setActivePage('dashboard')}
+              title="Main Dashboard"
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '4px',
+                backgroundColor: activePage === 'dashboard' ? 'rgba(95, 122, 154, 0.2)' : 'transparent',
+                border: activePage === 'dashboard' ? '1px solid #5F7A9A' : '1px solid transparent',
+                color: activePage === 'dashboard' ? '#5F7A9A' : '#737373',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 0,
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="7" height="7"></rect>
+                <rect x="14" y="3" width="7" height="7"></rect>
+                <rect x="14" y="14" width="7" height="7"></rect>
+                <rect x="3" y="14" width="7" height="7"></rect>
+              </svg>
+            </button>
+
+            {/* 2. Heatmap Icon (Below Main Dashboard) */}
+            <button
+              onClick={() => setActivePage('heatmap')}
+              title="NIFTY 50 Heatmap"
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '4px',
+                backgroundColor: activePage === 'heatmap' ? 'rgba(95, 122, 154, 0.2)' : 'transparent',
+                border: activePage === 'heatmap' ? '1px solid #5F7A9A' : '1px solid transparent',
+                color: activePage === 'heatmap' ? '#5F7A9A' : '#737373',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 0,
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="2" width="9" height="11" rx="1"></rect>
+                <rect x="13" y="2" width="9" height="6" rx="1"></rect>
+                <rect x="13" y="10" width="9" height="12" rx="1"></rect>
+                <rect x="2" y="15" width="9" height="7" rx="1"></rect>
+              </svg>
+            </button>
+          </div>
+
+          {/* Bottom of Right Panel: Settings Icon */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <button
+              onClick={() => setIsSettingsOpen(true)}
+              title="Platform & Chart Settings (Candle Colors, System Status)"
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '4px',
+                backgroundColor: isSettingsOpen ? 'rgba(95, 122, 154, 0.2)' : 'transparent',
+                border: isSettingsOpen ? '1px solid #5F7A9A' : '1px solid transparent',
+                color: isSettingsOpen ? '#5F7A9A' : '#737373',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 0,
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+              </svg>
+            </button>
+          </div>
+        </aside>
       </div>
 
       {/* ===================== RIGHT-CLICK CONTEXT MENU ON CHART ===================== */}
