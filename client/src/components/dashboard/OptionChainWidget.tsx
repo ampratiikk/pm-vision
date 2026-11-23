@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { ExpiryOption } from '@pm-vision/shared';
 
 export type ColumnKey = 'theta' | 'gamma' | 'delta' | 'oi' | 'ltp';
 
@@ -115,11 +116,17 @@ const FULL_OPTION_CHAIN: OptionRow[] = buildFullOptionChain();
 export interface OptionChainWidgetProps {
   data?: OptionRow[];
   spotPrice?: number;
+  expiries?: ExpiryOption[];
+  selectedExpiry?: string;
+  onSelectExpiry?: (expiryTimestamp: string) => void;
 }
 
 export const OptionChainWidget: React.FC<OptionChainWidgetProps> = ({
   data,
-  spotPrice
+  spotPrice,
+  expiries,
+  selectedExpiry,
+  onSelectExpiry
 }) => {
   const currentChain = data && data.length > 0 ? data : FULL_OPTION_CHAIN;
   const currentSpotPrice = spotPrice ?? DEFAULT_SPOT_PRICE;
@@ -294,6 +301,33 @@ export const OptionChainWidget: React.FC<OptionChainWidgetProps> = ({
           }}>
             NIFTY SPOT: {currentSpotPrice.toFixed(2)}
           </span>
+
+          {/* Expiry Selector Dropdown */}
+          {expiries && expiries.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span style={{ fontSize: '0.68rem', color: '#737373', fontWeight: 600 }}>EXPIRY:</span>
+              <select
+                value={selectedExpiry || (expiries[0]?.expiry || '')}
+                onChange={(e) => onSelectExpiry?.(e.target.value)}
+                style={{
+                  backgroundColor: '#0a0a0a',
+                  color: '#e5e7eb',
+                  border: '1px solid #262626',
+                  borderRadius: '3px',
+                  fontSize: '0.70rem',
+                  padding: '2px 6px',
+                  outline: 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                {expiries.map((exp) => (
+                  <option key={exp.expiry} value={exp.expiry}>
+                    {exp.date} {exp.expiry_flag ? `(${exp.expiry_flag})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         {/* Settings Button */}

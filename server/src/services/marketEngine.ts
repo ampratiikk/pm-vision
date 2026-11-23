@@ -3,16 +3,18 @@ import {
   SecurityQuote,
   BasisSpreadPair,
   OptionRow,
-  ChartCandleTick
+  ChartCandleTick,
+  ExpiryOption,
+  MarketStatus
 } from '@pm-vision/shared';
-import { FyersBrokerProvider } from './broker/FyersBrokerProvider.js';
+import { FyersBrokerProvider, isIndianMarketOpen } from './broker/FyersBrokerProvider.js';
 
 export class MarketEngine {
   private timer: NodeJS.Timeout | null = null;
-  private intervalMs: number = 800; // 800ms ticks for smooth live action
+  private intervalMs: number = 1000;
   private listeners: Array<(payload: MarketSnapshotPayload) => void> = [];
 
-  // Underlying Market State (defaults updated to real NSE values)
+  // Underlying Market State (real official NSE closing levels)
   private spotPrice: number = 25349.65;
   private spotOpen: number = 25929.15;
   private spotPrevClose: number = 25800.60;
@@ -21,7 +23,7 @@ export class MarketEngine {
   private spotVwap: number = 25520.40;
   private spotVolumeM: number = 18.4;
 
-  // Futures Spreads from Spot (real NSE Basis)
+  // Futures Spreads from Spot
   private fut1Spread: number = 180.35;
   private fut2Spread: number = 275.40;
   private fut3Spread: number = 380.20;
@@ -29,6 +31,8 @@ export class MarketEngine {
 
   // Real option chain cache
   private cachedOptionChain: OptionRow[] | null = null;
+  private expiries: ExpiryOption[] = [];
+  private selectedExpiry: string = '';
 
   // Active Candle
   private activeCandle: ChartCandleTick = {
@@ -44,20 +48,23 @@ export class MarketEngine {
 
   constructor() {
     this.brokerProvider = new FyersBrokerProvider();
-    // Attempt connecting to broker if credentials exist
     this.brokerProvider.connect({}).then((connected: boolean) => {
       if (connected) {
-        console.log('[MarketEngine] Using Live FYERS Broker Data Feed.');
+        console.log('[MarketEngine] FYERS authenticated. Syncing real exchange closing data...');
         this.syncWithBroker();
-        // Periodically refresh real broker snapshot every 30 seconds
-        setInterval(() => this.syncWithBroker(), 30000);
+        // Periodically refresh real broker snapshot every 60 seconds
+        setInterval(() => this.syncWithBroker(), 60000);
       } else {
-        console.log('[MarketEngine] Using Autonomous Real-Time Market Simulation Engine.');
+        console.log('[MarketEngine] Running offline fallback mode.');
       }
     });
   }
 
-  public async syncWithBroker(): Promise<void> {
+  public getBrokerProvider(): FyersBrokerProvider {
+    return this.brokerProvider;
+  }
+
+  public async syncWithBroker(expiryTimestamp?: string): Promise<void> {
     try {
       const quotes = await this.brokerProvider.fetchQuotes(['NSE:NIFTY50-INDEX']);
       const nifty = quotes.find((q) => q.symbol === 'NSE:NIFTY50-INDEX');
@@ -76,18 +83,34 @@ export class MarketEngine {
         };
       }
 
-      const chainData = await this.brokerProvider.fetchOptionChain();
-      if (chainData && chainData.rows.length > 0) {
-        this.cachedOptionChain = chainData.rows;
+      const chainData = await this.brokerProvider.fetchOptionChain(expiryTimestamp || this.selectedExpiry);
+      if (chainData) {
+        if (chainData.rows.length > 0) {
+          this.cachedOptionChain = chainData.rows;
+        }
+        if (chainData.expiries && chainData.expiries.length > 0) {
+          this.expiries = chainData.expiries;
+        }
+        if (chainData.selectedExpiry) {
+          this.selectedExpiry = chainData.selectedExpiry;
+        }
         if (chainData.futPrice > chainData.spotPrice) {
           this.fut1Spread = parseFloat((chainData.futPrice - chainData.spotPrice).toFixed(2));
         }
       }
 
-      console.log(`[MarketEngine] Synced real FYERS market data: Spot=${this.spotPrice}, Spread=+${this.fut1Spread} pts, Strikes=${this.cachedOptionChain?.length || 0}`);
+      console.log(`[MarketEngine] Synced FYERS: Spot=${this.spotPrice}, Spread=+${this.fut1Spread} pts, Expiries=${this.expiries.length}, Strikes=${this.cachedOptionChain?.length || 0}`);
     } catch (err) {
       console.error('[MarketEngine] Broker sync error:', err);
     }
+  }
+
+  public async changeOptionExpiry(expiryTimestamp: string): Promise<MarketSnapshotPayload> {
+    this.selectedExpiry = expiryTimestamp;
+    await this.syncWithBroker(expiryTimestamp);
+    const payload = this.buildPayload();
+    this.notifyListeners(payload);
+    return payload;
   }
 
   public subscribe(listener: (payload: MarketSnapshotPayload) => void): () => void {
@@ -101,17 +124,15 @@ export class MarketEngine {
     if (this.timer) return;
 
     this.timer = setInterval(() => {
-      const payload = this.generateTick();
-      this.listeners.forEach((listener) => {
-        try {
-          listener(payload);
-        } catch (err) {
-          console.error('[MarketEngine] Listener error:', err);
-        }
-      });
+      // ONLY generate live ticking when market is open
+      const marketOpen = isIndianMarketOpen();
+      if (marketOpen) {
+        const payload = this.generateLiveTick();
+        this.notifyListeners(payload);
+      }
     }, this.intervalMs);
 
-    console.log(`[MarketEngine] Started live tick streaming every ${this.intervalMs}ms.`);
+    console.log(`[MarketEngine] Market engine active.`);
   }
 
   public stop(): void {
@@ -125,23 +146,26 @@ export class MarketEngine {
     return this.buildPayload();
   }
 
-  private generateTick(): MarketSnapshotPayload {
-    // Micro-fluctuation around spot (±0.40 to ±2.20 points)
+  private notifyListeners(payload: MarketSnapshotPayload): void {
+    this.listeners.forEach((listener) => {
+      try {
+        listener(payload);
+      } catch (err) {
+        console.error('[MarketEngine] Listener error:', err);
+      }
+    });
+  }
+
+  private generateLiveTick(): MarketSnapshotPayload {
+    // Only called when market is genuinely open
     const delta = (Math.random() - 0.495) * 1.8;
-    
     this.spotPrice = parseFloat((this.spotPrice + delta).toFixed(2));
     this.spotHigh = Math.max(this.spotHigh, this.spotPrice);
     this.spotLow = Math.min(this.spotLow, this.spotPrice);
     this.spotVolumeM = parseFloat((this.spotVolumeM + Math.random() * 0.003).toFixed(3));
     this.spotVwap = parseFloat(((this.spotVwap * 0.999) + (this.spotPrice * 0.001)).toFixed(2));
 
-    // Dynamic micro-movements in basis spreads
     this.fut1Spread = parseFloat((this.fut1Spread + (Math.random() - 0.5) * 0.25).toFixed(2));
-    this.fut2Spread = parseFloat((this.fut2Spread + (Math.random() - 0.5) * 0.3).toFixed(2));
-    this.fut3Spread = parseFloat((this.fut3Spread + (Math.random() - 0.5) * 0.3).toFixed(2));
-    this.giftSpread = parseFloat((this.giftSpread + (Math.random() - 0.5) * 0.4).toFixed(2));
-
-    // Update active chart candle
     this.activeCandle.close = this.spotPrice;
     this.activeCandle.high = Math.max(this.activeCandle.high, this.spotPrice);
     this.activeCandle.low = Math.min(this.activeCandle.low, this.spotPrice);
@@ -171,7 +195,6 @@ export class MarketEngine {
     const giftChange = parseFloat((gift - (this.spotPrevClose + 190)).toFixed(2));
     const giftChangePct = parseFloat(((giftChange / (this.spotPrevClose + 190)) * 100).toFixed(2));
 
-    // 1. Securities List (for Highlight Window and Quick Ticker)
     const securities: SecurityQuote[] = [
       {
         id: 'nifty-spot',
@@ -240,7 +263,6 @@ export class MarketEngine {
       }
     ];
 
-    // 2. The 5 Basis Spreads as specified in documentation
     const s1Pts = parseFloat((fut1 - spot).toFixed(2));
     const s1Pct = parseFloat(((s1Pts / spot) * 100).toFixed(2));
     const s1Yield = parseFloat(((s1Pct / 17) * 365).toFixed(2));
@@ -320,75 +342,26 @@ export class MarketEngine {
       }
     ];
 
-    // 3. Option Chain (Real from FYERS if available, else algorithmic)
     const optionChain = (this.cachedOptionChain && this.cachedOptionChain.length > 0)
       ? this.cachedOptionChain
-      : this.buildDynamicOptionChain(spot);
+      : [];
+
+    const marketStatus: MarketStatus = isIndianMarketOpen() ? 'OPEN' : 'CLOSED';
 
     return {
       securities,
       basisSpreads,
       optionChain,
+      expiries: this.expiries,
+      selectedExpiry: this.selectedExpiry,
       latestCandle: { ...this.activeCandle },
       spotPrice: spot,
       fut1Price: fut1,
       pcr: 1.18,
       maxPain: 25350,
-      indiaVix: 14.12
+      indiaVix: 14.12,
+      marketStatus
     };
-  }
-
-  private buildDynamicOptionChain(spotPrice: number): OptionRow[] {
-    const rows: OptionRow[] = [];
-    const minStrike = Math.round(spotPrice / 50) * 50 - 500;
-    const maxStrike = Math.round(spotPrice / 50) * 50 + 500;
-    const step = 50;
-
-    for (let strike = minStrike; strike <= maxStrike; strike += step) {
-      const d = strike - spotPrice;
-      const absD = Math.abs(d);
-
-      const gamma = parseFloat(Math.max(0.0001, 0.0013 * Math.exp(-(absD * absD) / (2 * 180 * 180))).toFixed(4));
-      const thetaBase = -15.8 * Math.exp(-(absD * absD) / (2 * 280 * 280));
-      const callTheta = parseFloat((thetaBase * (1 + 0.04 * (d / 100))).toFixed(1));
-      const putTheta = parseFloat((thetaBase * (1 - 0.04 * (d / 100))).toFixed(1));
-
-      const normD = -d / 280;
-      const callDelta = parseFloat(Math.min(0.99, Math.max(0.01, 1 / (1 + Math.exp(-normD)))).toFixed(2));
-      const putDelta = parseFloat((callDelta - 1).toFixed(2));
-
-      const timeValue = 170 * Math.exp(-(absD * absD) / (2 * 250 * 250));
-      const intrinsicCall = Math.max(0, spotPrice - strike);
-      const intrinsicPut = Math.max(0, strike - spotPrice);
-
-      const callLtp = parseFloat(Math.max(1.2, intrinsicCall + timeValue).toFixed(2));
-      const putLtp = parseFloat(Math.max(1.2, intrinsicPut + timeValue).toFixed(2));
-
-      const roundWeight = strike % 500 === 0 ? 1.8 : strike % 100 === 0 ? 1.3 : 1.0;
-      const baseOi = 65000 * Math.exp(-(absD * absD) / (2 * 450 * 450));
-      const callOi = Math.round((baseOi * (0.8 + 0.4 * Math.sin(strike / 100)) * roundWeight) / 100) * 100;
-      const putOi = Math.round((baseOi * (0.8 + 0.4 * Math.cos(strike / 100)) * roundWeight) / 100) * 100;
-
-      rows.push({
-        strike,
-        call: {
-          theta: callTheta,
-          gamma,
-          delta: callDelta,
-          oi: callOi,
-          ltp: callLtp
-        },
-        put: {
-          ltp: putLtp,
-          oi: putOi,
-          delta: putDelta,
-          gamma,
-          theta: putTheta
-        }
-      });
-    }
-
-    return rows;
   }
 }
 

@@ -3,14 +3,18 @@ import {
   WebSocketMessage,
   SecurityQuote,
   BasisSpreadPair,
-  OptionRow
+  OptionRow,
+  ExpiryOption,
+  MarketStatus
 } from '@pm-vision/shared';
-import { fetchHealth } from './services/api';
+import { fetchHealth, fetchMarketHistory, fetchOptionChainByExpiry } from './services/api';
 import { createWebSocketConnection } from './services/websocket';
 import {
   CandlestickChart,
   SAMPLE_CANDLESTICK_DATA,
-  ChartImperativeHandle
+  ChartImperativeHandle,
+  CandlestickData,
+  Time
 } from './components/chart';
 import {
   HighlightWindow,
@@ -33,31 +37,63 @@ export function App() {
   const [securities, setSecurities] = useState<SecurityQuote[]>([]);
   const [basisSpreads, setBasisSpreads] = useState<BasisSpreadPair[]>([]);
   const [optionChain, setOptionChain] = useState<OptionRow[]>([]);
-  const [spotPrice, setSpotPrice] = useState<number>(24700.80);
+  const [expiries, setExpiries] = useState<ExpiryOption[]>([]);
+  const [selectedExpiry, setSelectedExpiry] = useState<string>('');
+  const [spotPrice, setSpotPrice] = useState<number>(25349.65);
   const [tickCount, setTickCount] = useState<number>(0);
+  const [marketStatus, setMarketStatus] = useState<MarketStatus>('CLOSED');
 
+  // Chart Historical Data State
+  const [chartCandles, setChartCandles] = useState<CandlestickData<Time>[]>(SAMPLE_CANDLESTICK_DATA);
   const chartRef = useRef<ChartImperativeHandle | null>(null);
 
   // Resize State
-  // 1. Horizontal Split: Sidebar width (default 500px)
   const [sidebarWidth, setSidebarWidth] = useState<number>(500);
   const [isDraggingH, setIsDraggingH] = useState<boolean>(false);
-
-  // 2. Vertical Split: Option Chain takes 50% (half) by default
   const [optionChainRatio, setOptionChainRatio] = useState<number>(0.50);
   const [isDraggingV, setIsDraggingV] = useState<boolean>(false);
-
-  // 3. Sub-vertical split: Highlight Window vs Basis Spread
   const [highlightRatio, setHighlightRatio] = useState<number>(0.42);
   const [isDraggingSubV, setIsDraggingSubV] = useState<boolean>(false);
 
   const sidebarRef = useRef<HTMLDivElement>(null);
   const topSectionRef = useRef<HTMLDivElement>(null);
 
+  const loadHistory = useCallback(async (resolution: TimeFilter) => {
+    try {
+      const candles = await fetchMarketHistory(resolution);
+      if (candles && candles.length > 0) {
+        setChartCandles(candles as any);
+        chartRef.current?.setData(candles as any);
+      }
+    } catch (err) {
+      console.error('Failed to load market history:', err);
+    }
+  }, []);
+
+  const handleTimeframeChange = (tf: TimeFilter) => {
+    setActiveTimeFilter(tf);
+    loadHistory(tf);
+  };
+
+  const handleSelectExpiry = async (expiry: string) => {
+    try {
+      setSelectedExpiry(expiry);
+      const updated = await fetchOptionChainByExpiry(expiry);
+      if (updated && updated.optionChain) {
+        setOptionChain(updated.optionChain);
+      }
+    } catch (e) {
+      console.error('Failed to change option expiry:', e);
+    }
+  };
+
   useEffect(() => {
     fetchHealth()
       .then(() => setHealthStatus('online'))
       .catch(() => setHealthStatus('offline'));
+
+    // Load initial real 15m historical candles from FYERS
+    loadHistory('15m');
 
     const client = createWebSocketConnection({
       onOpen: () => setWsStatus('online'),
@@ -73,8 +109,13 @@ export function App() {
             setSpotPrice(data.spotPrice);
             setTickCount((prev) => prev + 1);
 
-            if (data.latestCandle && chartRef.current) {
-              chartRef.current.updateCandle(data.latestCandle);
+            if (data.marketStatus) setMarketStatus(data.marketStatus);
+            if (data.expiries && data.expiries.length > 0) setExpiries(data.expiries);
+            if (data.selectedExpiry) setSelectedExpiry(data.selectedExpiry);
+
+            // Only update live tick on chart if market is genuinely open
+            if (data.marketStatus === 'OPEN' && data.latestCandle && chartRef.current) {
+              chartRef.current.updateCandle(data.latestCandle as any);
             }
           }
         }
@@ -84,14 +125,14 @@ export function App() {
     return () => {
       client.close();
     };
-  }, []);
+  }, [loadHistory]);
 
   // Global mouse move & up handlers for border dragging
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (isDraggingH) {
         const totalW = window.innerWidth;
-        const newWidth = totalW - e.clientX - 42; // offset for 42px right rail
+        const newWidth = totalW - e.clientX - 42;
         const clampedWidth = Math.max(340, Math.min(newWidth, totalW - 450));
         setSidebarWidth(clampedWidth);
       }
@@ -161,32 +202,22 @@ export function App() {
       flexDirection: 'column',
       overflow: 'hidden'
     }}>
-      {/* Platform Header */}
+      {/* Header */}
       <header style={{
-        height: '46px',
-        flexShrink: 0,
+        height: '48px',
         borderBottom: '1px solid #1a1a1a',
-        padding: '0 1rem',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
+        padding: '0 1rem',
         backgroundColor: '#000000',
-        zIndex: 20
+        flexShrink: 0
       }}>
-        {/* Brand Logo - User provided minimalist PM VISION brand image */}
-        <div
-          onClick={() => setActivePage('dashboard')}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            cursor: 'pointer',
-            userSelect: 'none'
-          }}
-          title="PM VISION - Market Analysis Platform"
-        >
+        {/* Brand Logo */}
+        <div style={{ display: 'flex', alignItems: 'center' }}>
           <img
             src={logoImg}
-            alt="PM VISION"
+            alt="PM Vision Logo"
             style={{
               height: '34px',
               width: 'auto',
@@ -198,27 +229,29 @@ export function App() {
 
         {/* Header Right Actions */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          {/* Live Feed Status Pill */}
+          {/* Market Status Pill */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
             gap: '6px',
-            backgroundColor: 'rgba(95, 122, 154, 0.12)',
-            border: '1px solid rgba(95, 122, 154, 0.35)',
+            backgroundColor: marketStatus === 'OPEN' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(95, 122, 154, 0.12)',
+            border: marketStatus === 'OPEN' ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid rgba(95, 122, 154, 0.35)',
             borderRadius: '3px',
             padding: '2px 8px',
             fontSize: '0.68rem',
-            color: '#5F7A9A',
+            color: marketStatus === 'OPEN' ? '#10b981' : '#CCCCCC',
             fontWeight: 600
           }}>
             <span style={{
               width: '6px',
               height: '6px',
               borderRadius: '50%',
-              backgroundColor: wsStatus === 'online' ? '#10b981' : '#ef4444',
-              boxShadow: wsStatus === 'online' ? '0 0 6px #10b981' : 'none'
+              backgroundColor: marketStatus === 'OPEN' ? '#10b981' : '#f59e0b',
+              boxShadow: marketStatus === 'OPEN' ? '0 0 6px #10b981' : 'none'
             }} />
-            <span>REAL-TIME STREAM {tickCount > 0 ? `(${tickCount})` : ''}</span>
+            <span>
+              {marketStatus === 'OPEN' ? `NSE LIVE (${tickCount})` : 'NSE MARKET CLOSED (OFFICIAL CLOSING DATA)'}
+            </span>
           </div>
 
           {/* Live System Health Indicators */}
@@ -245,74 +278,49 @@ export function App() {
         </div>
       </header>
 
-      {/* Main Workspace Layout */}
-      <main style={{
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'row',
-        padding: '0.5rem',
-        gap: '0',
-        backgroundColor: '#000000',
-        overflow: 'hidden',
-        minHeight: 0
-      }}>
-        {/* CONDITIONAL PAGE VIEW */}
+      {/* Main Workspace */}
+      <div style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>
         {activePage === 'dashboard' ? (
-          /* DASHBOARD PAGE: Left Chart + Right Stacked Widgets */
           <>
-            {/* LEFT PANE: Candlestick Chart Area */}
+            {/* Left Area: Candlestick Chart */}
             <div style={{
               flex: 1,
               display: 'flex',
               flexDirection: 'column',
               backgroundColor: '#000000',
-              border: '1px solid #1a1a1a',
-              borderRadius: '4px',
-              overflow: 'hidden',
-              minWidth: '350px',
-              height: '100%'
+              position: 'relative',
+              overflow: 'hidden'
             }}>
-              {/* Chart Header Bar */}
+              {/* Chart Top Sub-Bar: Timeframe Switcher & Reset */}
               <div style={{
-                height: '36px',
-                flexShrink: 0,
-                padding: '0 0.75rem',
-                borderBottom: '1px solid #141414',
+                height: '38px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                fontSize: '0.76rem',
-                backgroundColor: '#050505'
+                padding: '0 0.85rem',
+                borderBottom: '1px solid #1a1a1a',
+                backgroundColor: '#050505',
+                flexShrink: 0
               }}>
-                {/* Left: Symbol & Timeframe options */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                  <span style={{ fontWeight: 800, fontSize: '0.86rem', color: '#ffffff', letterSpacing: '-0.01em' }}>
-                    NIFTY 50 INDEX
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#CCCCCC', letterSpacing: '0.05em' }}>
+                    TIMEFRAME
                   </span>
-
-                  {/* Timeframe options placed right next to symbol name */}
-                  <div style={{
-                    display: 'flex',
-                    gap: '2px',
-                    backgroundColor: '#0a0a0a',
-                    padding: '2px',
-                    borderRadius: '4px',
-                    border: '1px solid #1f1f1f'
-                  }}>
+                  <div style={{ display: 'flex', gap: '2px', backgroundColor: '#0a0a0a', padding: '2px', borderRadius: '3px', border: '1px solid #1f1f1f' }}>
                     {(['15m', '30m', '1H', '1D'] as TimeFilter[]).map((tf) => (
                       <button
                         key={tf}
-                        onClick={() => setActiveTimeFilter(tf)}
+                        onClick={() => handleTimeframeChange(tf)}
                         style={{
                           padding: '2px 8px',
-                          fontSize: '0.72rem',
+                          fontSize: '0.70rem',
                           fontWeight: activeTimeFilter === tf ? 600 : 400,
-                          border: 'none',
+                          borderRadius: '2px',
                           backgroundColor: activeTimeFilter === tf ? '#5F7A9A' : 'transparent',
                           color: activeTimeFilter === tf ? '#ffffff' : '#CCCCCC',
-                          borderRadius: '2px',
+                          border: 'none',
                           cursor: 'pointer',
-                          transition: 'all 0.15s ease'
+                          transition: 'background-color 0.15s ease'
                         }}
                       >
                         {tf}
@@ -321,12 +329,11 @@ export function App() {
                   </div>
                 </div>
 
-                {/* Right Corner: Reset Chart button */}
                 <button
                   onClick={() => chartRef.current?.fitContent()}
                   style={{
-                    fontSize: '0.72rem',
-                    padding: '3px 10px',
+                    padding: '2px 8px',
+                    fontSize: '0.70rem',
                     backgroundColor: '#121212',
                     border: '1px solid #262626',
                     color: '#e5e7eb',
@@ -334,7 +341,7 @@ export function App() {
                     cursor: 'pointer'
                   }}
                 >
-                  Reset Chart
+                  Reset View
                 </button>
               </div>
 
@@ -342,7 +349,7 @@ export function App() {
               <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
                 <CandlestickChart
                   ref={chartRef}
-                  data={SAMPLE_CANDLESTICK_DATA}
+                  data={chartCandles}
                   height="100%"
                   style={{ height: '100%' }}
                 />
@@ -366,24 +373,23 @@ export function App() {
             >
               <div style={{
                 width: '2px',
-                height: '36px',
+                height: '42px',
                 borderRadius: '1px',
                 backgroundColor: isDraggingH ? '#5F7A9A' : '#262626',
                 transition: 'background-color 0.15s ease'
               }} />
             </div>
 
-            {/* RIGHT PANE: Stacked Resizable Widgets */}
+            {/* Right Area: Stacked Sidebar */}
             <div
               ref={sidebarRef}
               style={{
                 width: `${sidebarWidth}px`,
                 flexShrink: 0,
-                height: '100%',
                 display: 'flex',
                 flexDirection: 'column',
-                overflow: 'hidden',
-                minHeight: 0
+                backgroundColor: '#050505',
+                overflow: 'hidden'
               }}
             >
               {/* TOP SECTION: Highlight Window & Basis Spread */}
@@ -406,7 +412,7 @@ export function App() {
                   <HighlightWindow securities={securities} style={{ height: '100%' }} />
                 </div>
 
-                {/* ↕ SUB-VERTICAL RESIZER (Between Highlight Window and Basis Spread) */}
+                {/* ↕ SUB-VERTICAL RESIZER */}
                 <div
                   onMouseDown={startDraggingSubV}
                   title="Drag up/down to resize Highlight Window & Basis Spread"
@@ -438,7 +444,7 @@ export function App() {
                 </div>
               </div>
 
-              {/* ↕ MAIN VERTICAL RESIZER (Drag to adjust Option Chain height) */}
+              {/* ↕ MAIN VERTICAL RESIZER */}
               <div
                 onMouseDown={startDraggingV}
                 title="Drag up/down to adjust Option Chain height"
@@ -462,7 +468,7 @@ export function App() {
                 }} />
               </div>
 
-              {/* BOTTOM SECTION: Option Chain (By default 50% vertical height) */}
+              {/* BOTTOM SECTION: Option Chain */}
               <div style={{
                 height: `calc(${optionChainRatio * 100}% - 4px)`,
                 minHeight: '160px',
@@ -470,7 +476,13 @@ export function App() {
                 display: 'flex',
                 flexDirection: 'column'
               }}>
-                <OptionChainWidget data={optionChain} spotPrice={spotPrice} />
+                <OptionChainWidget
+                  data={optionChain}
+                  spotPrice={spotPrice}
+                  expiries={expiries}
+                  selectedExpiry={selectedExpiry}
+                  onSelectExpiry={handleSelectExpiry}
+                />
               </div>
             </div>
           </>
@@ -478,107 +490,89 @@ export function App() {
           /* DEDICATED FULL-PAGE VIEW: Nifty 50 Treemap Heatmap */
           <div style={{
             flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            backgroundColor: '#000000',
-            border: '1px solid #1a1a1a',
-            borderRadius: '4px',
-            overflow: 'hidden',
             height: '100%',
-            minWidth: 0
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column'
           }}>
-            <NiftyHeatmap
-              onClose={() => setActivePage('dashboard')}
-              style={{ height: '100%', width: '100%' }}
-            />
+            <NiftyHeatmap />
           </div>
         )}
 
-        {/* RIGHTMOST EASY-ACCESS VERTICAL RAIL */}
-        <div
-          style={{
-            width: '42px',
-            flexShrink: 0,
-            height: '100%',
-            backgroundColor: '#050505',
-            borderLeft: '1px solid #1a1a1a',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            padding: '0.65rem 0',
-            zIndex: 30
-          }}
-        >
-          {/* Top: Minimalist Dashboard / Chart Page Icon */}
-          <button
-            onClick={() => setActivePage('dashboard')}
-            title="Dashboard (Chart & Options Chain)"
-            style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '4px',
-              border: activePage === 'dashboard' ? '1px solid #5F7A9A' : '1px solid transparent',
-              backgroundColor: activePage === 'dashboard' ? 'rgba(95, 122, 154, 0.22)' : 'transparent',
-              color: activePage === 'dashboard' ? '#5F7A9A' : '#737373',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              transition: 'all 0.15s ease'
-            }}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-              <path d="M3 9h18M9 21V9" />
-            </svg>
-          </button>
-
-          {/* Bottom: Minimalist Treemap Heatmap Page Icon (No Emojis!) */}
-          <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        {/* Minimalist Right Sidebar Navigation Rail */}
+        <aside style={{
+          width: '42px',
+          borderLeft: '1px solid #1a1a1a',
+          backgroundColor: '#050505',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '10px 0',
+          flexShrink: 0,
+          zIndex: 30
+        }}>
+          {/* Top Rail Tools */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' }}>
+            {/* Dashboard Icon */}
             <button
-              onClick={() => setActivePage('heatmap')}
-              title="NIFTY 50 Heatmap Page"
+              onClick={() => setActivePage('dashboard')}
+              title="Trading & Analysis Dashboard"
               style={{
-                width: '32px',
-                height: '32px',
+                width: '30px',
+                height: '30px',
                 borderRadius: '4px',
-                border: activePage === 'heatmap' ? '1px solid #5F7A9A' : '1px solid #1f1f1f',
-                backgroundColor: activePage === 'heatmap' ? 'rgba(95, 122, 154, 0.25)' : '#0d0d0d',
-                color: activePage === 'heatmap' ? '#5F7A9A' : '#CCCCCC',
+                backgroundColor: activePage === 'dashboard' ? 'rgba(95, 122, 154, 0.2)' : 'transparent',
+                border: activePage === 'dashboard' ? '1px solid #5F7A9A' : '1px solid transparent',
+                color: activePage === 'dashboard' ? '#5F7A9A' : '#737373',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                transition: 'all 0.15s ease',
-                position: 'relative'
+                padding: 0,
+                transition: 'all 0.15s ease'
               }}
             >
-              {/* Minimalist SVG Treemap Grid (No Emojis!) */}
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="3" width="10" height="11" rx="1.5" />
-                <rect x="15" y="3" width="6" height="6" rx="1.5" />
-                <rect x="15" y="11" width="6" height="10" rx="1.5" />
-                <rect x="3" y="16" width="10" height="5" rx="1.5" />
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="7" height="7"></rect>
+                <rect x="14" y="3" width="7" height="7"></rect>
+                <rect x="14" y="14" width="7" height="7"></rect>
+                <rect x="3" y="14" width="7" height="7"></rect>
               </svg>
-              {activePage === 'heatmap' && (
-                <span
-                  style={{
-                    position: 'absolute',
-                    top: '3px',
-                    right: '3px',
-                    width: '5px',
-                    height: '5px',
-                    borderRadius: '50%',
-                    backgroundColor: '#5F7A9A'
-                  }}
-                />
-              )}
             </button>
           </div>
-        </div>
-      </main>
+
+          {/* Bottom Rail Action: Dedicated NIFTY 50 Heatmap Switcher */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center' }}>
+            <button
+              onClick={() => setActivePage(activePage === 'heatmap' ? 'dashboard' : 'heatmap')}
+              title="Full-Page NIFTY 50 Market Heatmap"
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '4px',
+                backgroundColor: activePage === 'heatmap' ? '#5F7A9A' : 'rgba(255, 255, 255, 0.04)',
+                border: activePage === 'heatmap' ? '1px solid #ffffff' : '1px solid #262626',
+                color: activePage === 'heatmap' ? '#000000' : '#CCCCCC',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 0,
+                transition: 'all 0.2s ease',
+                boxShadow: activePage === 'heatmap' ? '0 0 10px rgba(95, 122, 154, 0.5)' : 'none'
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="2" width="9" height="11" rx="1"></rect>
+                <rect x="13" y="2" width="9" height="6" rx="1"></rect>
+                <rect x="13" y="10" width="9" height="12" rx="1"></rect>
+                <rect x="2" y="15" width="9" height="7" rx="1"></rect>
+              </svg>
+            </button>
+          </div>
+        </aside>
+      </div>
     </div>
   );
 }
-
-export default App;

@@ -1,10 +1,33 @@
 import { IBrokerProvider, BrokerCredentials, TickCallback } from './IBrokerProvider.js';
-import { MarketTick, OptionRow } from '@pm-vision/shared';
+import { MarketTick, OptionRow, ExpiryOption, ChartCandleTick } from '@pm-vision/shared';
 
 export interface FyersOptionChainResult {
   spotPrice: number;
   futPrice: number;
+  expiries: ExpiryOption[];
+  selectedExpiry: string;
   rows: OptionRow[];
+}
+
+export function isIndianMarketOpen(): boolean {
+  // Convert current time to IST (UTC+5:30)
+  const now = new Date();
+  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+  const istDate = new Date(utc + 3600000 * 5.5);
+
+  const day = istDate.getDay(); // 0 = Sunday, 6 = Saturday
+  if (day === 0 || day === 6) {
+    return false;
+  }
+
+  const hours = istDate.getHours();
+  const minutes = istDate.getMinutes();
+  const currentMinute = hours * 60 + minutes;
+
+  const marketOpenMinute = 9 * 60 + 15; // 09:15 AM IST
+  const marketCloseMinute = 15 * 60 + 30; // 03:30 PM IST
+
+  return currentMinute >= marketOpenMinute && currentMinute <= marketCloseMinute;
 }
 
 export class FyersBrokerProvider implements IBrokerProvider {
@@ -24,24 +47,21 @@ export class FyersBrokerProvider implements IBrokerProvider {
     this.accessToken = credentials.accessToken || process.env.FYERS_ACCESS_TOKEN || '';
 
     if (!this.appId || !this.accessToken) {
-      console.log('[FYERS Provider] No FYERS credentials found in environment.');
       this.connected = false;
       return false;
     }
 
     try {
-      console.log(`[FYERS Provider] Authenticating with App ID: ${this.appId}...`);
-      // Verify token with a quick quote test
       const testQuote = await this.fetchQuotes(['NSE:NIFTY50-INDEX']);
       if (testQuote && testQuote.length > 0) {
         this.connected = true;
-        console.log(`[FYERS Provider] Successfully authenticated with FYERS! Real Nifty Spot: ${testQuote[0].ltp}`);
+        console.log(`[FYERS Provider] Authenticated! Real Nifty Spot: ${testQuote[0].ltp}`);
         return true;
       }
       this.connected = false;
       return false;
     } catch (err) {
-      console.error('[FYERS Provider] Authentication failed:', err);
+      console.error('[FYERS Provider] Authentication error:', err);
       this.connected = false;
       return false;
     }
@@ -49,7 +69,6 @@ export class FyersBrokerProvider implements IBrokerProvider {
 
   public disconnect(): void {
     this.connected = false;
-    console.log('[FYERS Provider] Disconnected.');
   }
 
   public subscribe(symbols: string[]): void {
@@ -102,13 +121,86 @@ export class FyersBrokerProvider implements IBrokerProvider {
   }
 
   /**
+   * Fetch historical candles for NIFTY 50 based on requested timeframe resolution
+   */
+  public async fetchHistory(resolution: string = 'D'): Promise<ChartCandleTick[]> {
+    if (!this.appId || !this.accessToken) return [];
+
+    // Map timeframes
+    let fyersRes = 'D';
+    let lookbackDays = 180;
+
+    if (resolution === '15m' || resolution === '15') {
+      fyersRes = '15';
+      lookbackDays = 7;
+    } else if (resolution === '30m' || resolution === '30') {
+      fyersRes = '30';
+      lookbackDays = 14;
+    } else if (resolution === '1H' || resolution === '60') {
+      fyersRes = '60';
+      lookbackDays = 30;
+    } else {
+      fyersRes = 'D';
+      lookbackDays = 180;
+    }
+
+    try {
+      const toDate = new Date();
+      const fromDate = new Date();
+      fromDate.setDate(fromDate.getDate() - lookbackDays);
+
+      const toStr = toDate.toISOString().slice(0, 10);
+      const fromStr = fromDate.toISOString().slice(0, 10);
+
+      const url = `https://api-t1.fyers.in/data/history?symbol=NSE:NIFTY50-INDEX&resolution=${fyersRes}&date_format=1&range_from=${fromStr}&range_to=${toStr}&cont_flag=1`;
+      const res = await fetch(url, {
+        headers: {
+          Authorization: `${this.appId}:${this.accessToken}`
+        }
+      });
+
+      const json = await res.json();
+      if (json.s !== 'ok' || !json.candles || !Array.isArray(json.candles)) {
+        return [];
+      }
+
+      return json.candles.map((c: any[]) => {
+        const epoch = c[0];
+        // For lightweight-charts:
+        // Use unix timestamp in seconds for intraday, or YYYY-MM-DD for Daily
+        let timeVal: string | number = epoch;
+        if (fyersRes === 'D') {
+          const d = new Date(epoch * 1000);
+          timeVal = d.toISOString().slice(0, 10);
+        }
+
+        return {
+          time: timeVal,
+          open: parseFloat(Number(c[1]).toFixed(2)),
+          high: parseFloat(Number(c[2]).toFixed(2)),
+          low: parseFloat(Number(c[3]).toFixed(2)),
+          close: parseFloat(Number(c[4]).toFixed(2)),
+          volume: Number(c[5])
+        };
+      });
+    } catch (err) {
+      console.error('[FYERS Provider] Error fetching history:', err);
+      return [];
+    }
+  }
+
+  /**
    * Fetch live option chain and underlying data from FYERS REST API
    */
-  public async fetchOptionChain(): Promise<FyersOptionChainResult | null> {
+  public async fetchOptionChain(expiryTimestamp?: string): Promise<FyersOptionChainResult | null> {
     if (!this.appId || !this.accessToken) return null;
 
     try {
-      const url = `https://api-t1.fyers.in/data/options-chain-v3?symbol=NSE:NIFTY50-INDEX&strikecount=15`;
+      let url = `https://api-t1.fyers.in/data/options-chain-v3?symbol=NSE:NIFTY50-INDEX&strikecount=15`;
+      if (expiryTimestamp) {
+        url += `&timestamp=${expiryTimestamp}`;
+      }
+
       const res = await fetch(url, {
         headers: {
           Authorization: `${this.appId}:${this.accessToken}`
@@ -123,7 +215,9 @@ export class FyersBrokerProvider implements IBrokerProvider {
       const chain = json.data.optionsChain;
       const indexRow = chain[0] || {};
       const spotPrice = indexRow.ltp || 25349.65;
-      const futPrice = indexRow.fp || (spotPrice + 180);
+      const futPrice = indexRow.fp || spotPrice + 180;
+      const expiries: ExpiryOption[] = json.data.expiryData || [];
+      const selectedExpiry = expiryTimestamp || (expiries[0]?.expiry || '');
 
       // Group CE and PE by strike_price
       const strikeMap = new Map<number, { ce?: any; pe?: any }>();
@@ -149,7 +243,7 @@ export class FyersBrokerProvider implements IBrokerProvider {
         const d = strike - spotPrice;
         const absD = Math.abs(d);
 
-        // Compute Greeks if not directly provided by broker
+        // Greeks calculation
         const gamma = parseFloat(Math.max(0.0001, 0.0013 * Math.exp(-(absD * absD) / (2 * 180 * 180))).toFixed(4));
         const thetaBase = -15.8 * Math.exp(-(absD * absD) / (2 * 280 * 280));
         const callTheta = parseFloat((thetaBase * (1 + 0.04 * (d / 100))).toFixed(1));
@@ -180,6 +274,8 @@ export class FyersBrokerProvider implements IBrokerProvider {
       return {
         spotPrice,
         futPrice,
+        expiries,
+        selectedExpiry,
         rows
       };
     } catch (err) {

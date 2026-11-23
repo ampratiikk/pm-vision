@@ -85,24 +85,36 @@ export interface OptionRow {
   };
 }
 
+export interface ExpiryOption {
+  date: string;
+  expiry: string;
+  expiry_flag?: string;
+}
+
 export interface ChartCandleTick {
-  time: string;
+  time: string | number;
   open: number;
   high: number;
   low: number;
   close: number;
+  volume?: number;
 }
+
+export type MarketStatus = 'OPEN' | 'CLOSED';
 
 export interface MarketSnapshotPayload {
   securities: SecurityQuote[];
   basisSpreads: BasisSpreadPair[];
   optionChain: OptionRow[];
+  expiries: ExpiryOption[];
+  selectedExpiry?: string;
   latestCandle: ChartCandleTick;
   spotPrice: number;
   fut1Price: number;
   pcr: number;
   maxPain: number;
   indiaVix: number;
+  marketStatus: MarketStatus;
 }
 
 export interface MarketSnapshotMessage extends BaseWebSocketMessage {
