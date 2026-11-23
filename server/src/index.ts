@@ -1,3 +1,4 @@
+import './config/index.js';
 import http from 'http';
 import { createApp } from './app.js';
 import { setupWebSocketServer } from './ws/wsServer.js';
