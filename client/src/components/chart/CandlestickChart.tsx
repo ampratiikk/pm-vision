@@ -42,6 +42,39 @@ interface OHLCInfo {
   changePct: number; // compared to previous candle close
 }
 
+function sanitizeCandles(raw: CandlestickData<Time>[]): CandlestickData<Time>[] {
+  if (!raw || !Array.isArray(raw) || raw.length === 0) return [];
+  const map = new Map<string, CandlestickData<Time>>();
+  for (const c of raw) {
+    if (
+      c &&
+      c.time !== undefined &&
+      c.time !== null &&
+      !isNaN(Number(c.open)) &&
+      !isNaN(Number(c.high)) &&
+      !isNaN(Number(c.low)) &&
+      !isNaN(Number(c.close))
+    ) {
+      map.set(String(c.time), {
+        ...c,
+        open: Number(c.open),
+        high: Number(c.high),
+        low: Number(c.low),
+        close: Number(c.close)
+      });
+    }
+  }
+
+  const list = Array.from(map.values());
+  list.sort((a, b) => {
+    const ta = typeof a.time === 'number' ? a.time : new Date(String(a.time)).getTime();
+    const tb = typeof b.time === 'number' ? b.time : new Date(String(b.time)).getTime();
+    return ta - tb;
+  });
+
+  return list;
+}
+
 function computeOHLCInfo(list: CandlestickData<Time>[], targetIdx: number): OHLCInfo | null {
   if (targetIdx < 0 || targetIdx >= list.length) return null;
   const bar = list[targetIdx];
@@ -240,13 +273,20 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
           setOhlcInfo(computeOHLCInfo(list, list.length - 1));
         },
         setData: (newData) => {
-          seriesRef.current?.setData(newData);
-          currentDataRef.current = [...newData];
-          const latest = newData && newData.length > 0 ? newData[newData.length - 1] : null;
-          if (latest) {
-            priceBoxRef.current?.update(latest.close, latest.close >= latest.open);
+          try {
+            const clean = sanitizeCandles(newData);
+            if (clean.length === 0) return;
+            seriesRef.current?.setData(clean);
+            currentDataRef.current = clean;
+            const latest = clean[clean.length - 1];
+            if (latest) {
+              priceBoxRef.current?.update(latest.close, latest.close >= latest.open);
+            }
+            setOhlcInfo(computeOHLCInfo(clean, clean.length - 1));
+            chartRef.current?.timeScale().fitContent();
+          } catch (err) {
+            console.error('Error applying chart data:', err);
           }
-          setOhlcInfo(computeOHLCInfo(newData, newData.length - 1));
         },
         fitContent: () => {
           chartRef.current?.timeScale().fitContent();
@@ -470,14 +510,22 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
 
     // Update dataset when data prop changes
     useEffect(() => {
-      if (seriesRef.current && data) {
-        seriesRef.current.setData(data);
-        currentDataRef.current = [...data];
-        const latest = data.length > 0 ? data[data.length - 1] : null;
-        if (latest) {
-          priceBoxRef.current?.update(latest.close, latest.close >= latest.open);
+      try {
+        if (seriesRef.current && data) {
+          const clean = sanitizeCandles(data);
+          if (clean.length > 0) {
+            seriesRef.current.setData(clean);
+            currentDataRef.current = clean;
+            const latest = clean[clean.length - 1];
+            if (latest) {
+              priceBoxRef.current?.update(latest.close, latest.close >= latest.open);
+            }
+            setOhlcInfo(computeOHLCInfo(clean, clean.length - 1));
+            chartRef.current?.timeScale().fitContent();
+          }
         }
-        setOhlcInfo(computeOHLCInfo(data, data.length - 1));
+      } catch (err) {
+        console.error('Error updating chart series data:', err);
       }
     }, [data]);
 

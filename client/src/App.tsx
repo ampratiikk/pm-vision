@@ -24,14 +24,43 @@ import {
 } from './components/dashboard';
 import logoImg from './assets/logo.png';
 
-type TimeFilter = '15m' | '30m' | '1H' | '1D';
 type AppPage = 'dashboard' | 'heatmap';
+
+const ALL_TIMEFRAMES = [
+  { label: '1m', value: '1m' },
+  { label: '2m', value: '2m' },
+  { label: '3m', value: '3m' },
+  { label: '5m', value: '5m' },
+  { label: '10m', value: '10m' },
+  { label: '15m', value: '15m' },
+  { label: '30m', value: '30m' },
+  { label: '1H', value: '1H' },
+  { label: '2H', value: '2H' },
+  { label: '4H', value: '4H' },
+  { label: '1D', value: '1D' }
+];
+
+const DEFAULT_PINNED = ['1m', '5m', '15m', '1H', '1D'];
 
 export function App() {
   const [activePage, setActivePage] = useState<AppPage>('dashboard');
   const [healthStatus, setHealthStatus] = useState<'online' | 'offline' | 'loading'>('loading');
   const [wsStatus, setWsStatus] = useState<'online' | 'offline' | 'loading'>('loading');
-  const [activeTimeFilter, setActiveTimeFilter] = useState<TimeFilter>('15m');
+  const [activeTimeFilter, setActiveTimeFilter] = useState<string>('15m');
+  const [isChartLoading, setIsChartLoading] = useState<boolean>(false);
+
+  // Pinned Timeframes state (persisted to localStorage)
+  const [pinnedTimeframes, setPinnedTimeframes] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('pm_vision_pinned_tf');
+      return saved ? JSON.parse(saved) : DEFAULT_PINNED;
+    } catch {
+      return DEFAULT_PINNED;
+    }
+  });
+  const [showTfDropdown, setShowTfDropdown] = useState<boolean>(false);
+  const [customValue, setCustomValue] = useState<string>('3');
+  const [customUnit, setCustomUnit] = useState<'m' | 'H' | 'D'>('m');
 
   // Real-Time Streaming State
   const [securities, setSecurities] = useState<SecurityQuote[]>([]);
@@ -58,7 +87,8 @@ export function App() {
   const sidebarRef = useRef<HTMLDivElement>(null);
   const topSectionRef = useRef<HTMLDivElement>(null);
 
-  const loadHistory = useCallback(async (resolution: TimeFilter) => {
+  const loadHistory = useCallback(async (resolution: string) => {
+    setIsChartLoading(true);
     try {
       const candles = await fetchMarketHistory(resolution);
       if (candles && candles.length > 0) {
@@ -67,12 +97,39 @@ export function App() {
       }
     } catch (err) {
       console.error('Failed to load market history:', err);
+    } finally {
+      setIsChartLoading(false);
     }
   }, []);
 
-  const handleTimeframeChange = (tf: TimeFilter) => {
+  const handleTimeframeChange = (tf: string) => {
     setActiveTimeFilter(tf);
     loadHistory(tf);
+  };
+
+  const togglePin = (tf: string) => {
+    const updated = pinnedTimeframes.includes(tf)
+      ? pinnedTimeframes.filter((t) => t !== tf)
+      : [...pinnedTimeframes, tf];
+    setPinnedTimeframes(updated);
+    try {
+      localStorage.setItem('pm_vision_pinned_tf', JSON.stringify(updated));
+    } catch {}
+  };
+
+  const handleAddCustom = () => {
+    const val = parseInt(customValue, 10);
+    if (!val || val <= 0) return;
+    const tfStr = `${val}${customUnit}`;
+    if (!pinnedTimeframes.includes(tfStr)) {
+      const updated = [...pinnedTimeframes, tfStr];
+      setPinnedTimeframes(updated);
+      try {
+        localStorage.setItem('pm_vision_pinned_tf', JSON.stringify(updated));
+      } catch {}
+    }
+    handleTimeframeChange(tfStr);
+    setShowTfDropdown(false);
   };
 
   const handleSelectExpiry = async (expiry: string) => {
@@ -302,12 +359,14 @@ export function App() {
                 backgroundColor: '#050505',
                 flexShrink: 0
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', position: 'relative' }}>
                   <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#CCCCCC', letterSpacing: '0.05em' }}>
                     TIMEFRAME
                   </span>
-                  <div style={{ display: 'flex', gap: '2px', backgroundColor: '#0a0a0a', padding: '2px', borderRadius: '3px', border: '1px solid #1f1f1f' }}>
-                    {(['15m', '30m', '1H', '1D'] as TimeFilter[]).map((tf) => (
+
+                  {/* Pinned Timeframe Buttons */}
+                  <div style={{ display: 'flex', gap: '2px', backgroundColor: '#0a0a0a', padding: '2px', borderRadius: '3px', border: '1px solid #1f1f1f', alignItems: 'center' }}>
+                    {pinnedTimeframes.map((tf) => (
                       <button
                         key={tf}
                         onClick={() => handleTimeframeChange(tf)}
@@ -326,7 +385,165 @@ export function App() {
                         {tf}
                       </button>
                     ))}
+
+                    {/* Timeframe Dropdown Toggle */}
+                    <button
+                      onClick={() => setShowTfDropdown(!showTfDropdown)}
+                      title="Custom interval & pin timeframes"
+                      style={{
+                        padding: '2px 6px',
+                        fontSize: '0.70rem',
+                        backgroundColor: showTfDropdown ? 'rgba(95, 122, 154, 0.2)' : 'transparent',
+                        color: showTfDropdown ? '#5F7A9A' : '#737373',
+                        border: 'none',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                    >
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                      </svg>
+                    </button>
                   </div>
+
+                  {/* Loading indicator */}
+                  {isChartLoading && (
+                    <span style={{ fontSize: '0.68rem', color: '#5F7A9A', fontStyle: 'italic' }}>
+                      Loading candles...
+                    </span>
+                  )}
+
+                  {/* Dropdown Menu for Custom Interval & Pinning */}
+                  {showTfDropdown && (
+                    <div style={{
+                      position: 'absolute',
+                      top: 'calc(100% + 4px)',
+                      left: '80px',
+                      width: '240px',
+                      backgroundColor: '#0a0a0a',
+                      border: '1px solid #262626',
+                      borderRadius: '4px',
+                      boxShadow: '0 8px 24px rgba(0,0,0,0.95)',
+                      padding: '0.75rem',
+                      zIndex: 60,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.65rem'
+                    }}>
+                      <div style={{ fontSize: '0.70rem', fontWeight: 700, color: '#CCCCCC', borderBottom: '1px solid #1a1a1a', paddingBottom: '4px' }}>
+                        PRESET INTERVALS
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px', maxHeight: '160px', overflowY: 'auto' }}>
+                        {ALL_TIMEFRAMES.map((item) => {
+                          const isPinned = pinnedTimeframes.includes(item.value);
+                          const isActive = activeTimeFilter === item.value;
+                          return (
+                            <div
+                              key={item.value}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                padding: '3px 6px',
+                                borderRadius: '2px',
+                                backgroundColor: isActive ? 'rgba(95, 122, 154, 0.2)' : 'transparent',
+                                border: isActive ? '1px solid rgba(95, 122, 154, 0.4)' : '1px solid transparent'
+                              }}
+                            >
+                              <span
+                                onClick={() => {
+                                  handleTimeframeChange(item.value);
+                                  setShowTfDropdown(false);
+                                }}
+                                style={{
+                                  fontSize: '0.72rem',
+                                  color: isActive ? '#ffffff' : '#CCCCCC',
+                                  cursor: 'pointer',
+                                  flex: 1
+                                }}
+                              >
+                                {item.label}
+                              </span>
+                              <button
+                                onClick={() => togglePin(item.value)}
+                                title={isPinned ? 'Unpin from top bar' : 'Pin to top bar'}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                  padding: '0 2px',
+                                  color: isPinned ? '#5F7A9A' : '#404040'
+                                }}
+                              >
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill={isPinned ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+                                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                                </svg>
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Custom Input */}
+                      <div style={{ borderTop: '1px solid #1a1a1a', paddingTop: '6px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div style={{ fontSize: '0.68rem', color: '#a3a3a3', fontWeight: 600 }}>CUSTOM INTERVAL</div>
+                        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                          <input
+                            type="number"
+                            min="1"
+                            max="60"
+                            value={customValue}
+                            onChange={(e) => setCustomValue(e.target.value)}
+                            style={{
+                              width: '45px',
+                              backgroundColor: '#121212',
+                              border: '1px solid #262626',
+                              color: '#ffffff',
+                              fontSize: '0.72rem',
+                              padding: '2px 4px',
+                              borderRadius: '2px',
+                              outline: 'none'
+                            }}
+                          />
+                          <select
+                            value={customUnit}
+                            onChange={(e) => setCustomUnit(e.target.value as any)}
+                            style={{
+                              backgroundColor: '#121212',
+                              border: '1px solid #262626',
+                              color: '#ffffff',
+                              fontSize: '0.72rem',
+                              padding: '2px 4px',
+                              borderRadius: '2px',
+                              outline: 'none',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            <option value="m">Minute(s)</option>
+                            <option value="H">Hour(s)</option>
+                            <option value="D">Day(s)</option>
+                          </select>
+                          <button
+                            onClick={handleAddCustom}
+                            style={{
+                              fontSize: '0.70rem',
+                              padding: '2px 8px',
+                              backgroundColor: '#5F7A9A',
+                              color: '#ffffff',
+                              border: 'none',
+                              borderRadius: '2px',
+                              cursor: 'pointer',
+                              fontWeight: 600
+                            }}
+                          >
+                            Pin
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <button

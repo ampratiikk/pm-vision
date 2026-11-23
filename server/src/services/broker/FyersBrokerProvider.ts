@@ -122,26 +122,49 @@ export class FyersBrokerProvider implements IBrokerProvider {
 
   /**
    * Fetch historical candles for NIFTY 50 based on requested timeframe resolution
+   * Supports: 1m, 2m, 3m, 5m, 10m, 15m, 30m, 1H, 2H, 4H, 1D
    */
   public async fetchHistory(resolution: string = 'D'): Promise<ChartCandleTick[]> {
     if (!this.appId || !this.accessToken) return [];
 
-    // Map timeframes
     let fyersRes = 'D';
-    let lookbackDays = 180;
+    let lookbackDays = 365; // 1 full year for daily
 
-    if (resolution === '15m' || resolution === '15') {
-      fyersRes = '15';
+    const resClean = resolution.toLowerCase().trim();
+
+    if (resClean === '1m' || resClean === '1') {
+      fyersRes = '1';
+      lookbackDays = 3;
+    } else if (resClean === '2m' || resClean === '2') {
+      fyersRes = '2';
+      lookbackDays = 5;
+    } else if (resClean === '3m' || resClean === '3') {
+      fyersRes = '3';
       lookbackDays = 7;
-    } else if (resolution === '30m' || resolution === '30') {
+    } else if (resClean === '5m' || resClean === '5') {
+      fyersRes = '5';
+      lookbackDays = 10;
+    } else if (resClean === '10m' || resClean === '10') {
+      fyersRes = '10';
+      lookbackDays = 15;
+    } else if (resClean === '15m' || resClean === '15') {
+      fyersRes = '15';
+      lookbackDays = 25;
+    } else if (resClean === '30m' || resClean === '30') {
       fyersRes = '30';
-      lookbackDays = 14;
-    } else if (resolution === '1H' || resolution === '60') {
+      lookbackDays = 45;
+    } else if (resClean === '1h' || resClean === '60') {
       fyersRes = '60';
-      lookbackDays = 30;
+      lookbackDays = 90;
+    } else if (resClean === '2h' || resClean === '120') {
+      fyersRes = '120';
+      lookbackDays = 100;
+    } else if (resClean === '4h' || resClean === '240') {
+      fyersRes = '240';
+      lookbackDays = 100;
     } else {
       fyersRes = 'D';
-      lookbackDays = 180;
+      lookbackDays = 365;
     }
 
     try {
@@ -164,13 +187,23 @@ export class FyersBrokerProvider implements IBrokerProvider {
         return [];
       }
 
-      return json.candles.map((c: any[]) => {
+      // Deduplicate by timestamp and strictly sort ascending
+      const candleMap = new Map<number, any[]>();
+      for (const c of json.candles) {
+        if (Array.isArray(c) && c.length >= 5 && typeof c[0] === 'number') {
+          candleMap.set(c[0], c);
+        }
+      }
+
+      const sorted = Array.from(candleMap.values()).sort((a, b) => a[0] - b[0]);
+
+      return sorted.map((c: any[]) => {
         const epoch = c[0];
-        // For lightweight-charts:
-        // Use unix timestamp in seconds for intraday, or YYYY-MM-DD for Daily
         let timeVal: string | number = epoch;
+
         if (fyersRes === 'D') {
-          const d = new Date(epoch * 1000);
+          // Format date as YYYY-MM-DD using IST (epoch in seconds)
+          const d = new Date((epoch + 19800) * 1000);
           timeVal = d.toISOString().slice(0, 10);
         }
 
@@ -180,7 +213,7 @@ export class FyersBrokerProvider implements IBrokerProvider {
           high: parseFloat(Number(c[2]).toFixed(2)),
           low: parseFloat(Number(c[3]).toFixed(2)),
           close: parseFloat(Number(c[4]).toFixed(2)),
-          volume: Number(c[5])
+          volume: Number(c[5]) || 0
         };
       });
     } catch (err) {
