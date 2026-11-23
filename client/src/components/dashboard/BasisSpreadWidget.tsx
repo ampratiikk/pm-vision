@@ -1,19 +1,9 @@
 import React, { useState } from 'react';
+import { BasisSpreadPair } from '@pm-vision/shared';
 
-export interface BasisSpreadPair {
-  id: string;
-  name: string;
-  leg1: string;
-  leg2: string;
-  price1: number;
-  price2: number;
-  spread: number;
-  spreadPct: number;
-  annualizedYield: number;
-  isDefault?: boolean;
-}
+export type { BasisSpreadPair };
 
-const DEFAULT_PAIRS: BasisSpreadPair[] = [
+export const DEFAULT_PAIRS: BasisSpreadPair[] = [
   {
     id: 'nifty-fut1',
     name: 'Nifty ↔ Nifty Fut #1',
@@ -73,14 +63,20 @@ const DEFAULT_PAIRS: BasisSpreadPair[] = [
 ];
 
 interface BasisSpreadWidgetProps {
+  pairs?: BasisSpreadPair[];
   onSelectPair?: (pair: BasisSpreadPair) => void;
   style?: React.CSSProperties;
 }
 
-export const BasisSpreadWidget: React.FC<BasisSpreadWidgetProps> = ({ onSelectPair, style }) => {
+export const BasisSpreadWidget: React.FC<BasisSpreadWidgetProps> = ({
+  pairs = DEFAULT_PAIRS,
+  onSelectPair,
+  style
+}) => {
   const [selectedPairId, setSelectedPairId] = useState<string>('nifty-fut1');
 
-  const selectedPair = DEFAULT_PAIRS.find((p) => p.id === selectedPairId) || DEFAULT_PAIRS[0];
+  const activePairs = pairs && pairs.length > 0 ? pairs : DEFAULT_PAIRS;
+  const selectedPair = activePairs.find((p) => p.id === selectedPairId) || activePairs[0];
 
   const handleSelect = (pair: BasisSpreadPair) => {
     setSelectedPairId(pair.id);
@@ -100,9 +96,19 @@ export const BasisSpreadWidget: React.FC<BasisSpreadWidgetProps> = ({ onSelectPa
       ...style
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#CCCCCC', fontWeight: 600 }}>
-          BASIS SPREAD
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#CCCCCC', fontWeight: 600 }}>
+            BASIS SPREAD
+          </span>
+          <span style={{
+            display: 'inline-block',
+            width: '6px',
+            height: '6px',
+            borderRadius: '50%',
+            backgroundColor: '#10b981',
+            boxShadow: '0 0 4px #10b981'
+          }} />
+        </div>
         <span style={{
           fontSize: '0.65rem',
           color: '#5F7A9A',
@@ -129,7 +135,7 @@ export const BasisSpreadWidget: React.FC<BasisSpreadWidgetProps> = ({ onSelectPa
         <div>
           <div style={{ fontSize: '0.75rem', color: '#CCCCCC' }}>{selectedPair.name}</div>
           <div style={{ fontSize: '1.15rem', fontWeight: 700, fontFamily: 'monospace', color: '#ffffff' }}>
-            +{selectedPair.spread.toFixed(2)} pts
+            {selectedPair.spread >= 0 ? '+' : ''}{selectedPair.spread.toFixed(2)} pts
           </div>
         </div>
         <div style={{ textAlign: 'right', fontSize: '0.72rem', color: '#CCCCCC' }}>
@@ -145,7 +151,7 @@ export const BasisSpreadWidget: React.FC<BasisSpreadWidgetProps> = ({ onSelectPa
         gap: '2px',
         fontSize: '0.72rem'
       }}>
-        {DEFAULT_PAIRS.map((pair) => {
+        {activePairs.map((pair) => {
           const isSelected = pair.id === selectedPairId;
           return (
             <div
@@ -168,7 +174,7 @@ export const BasisSpreadWidget: React.FC<BasisSpreadWidgetProps> = ({ onSelectPa
                 {pair.isDefault && <span style={{ marginLeft: '4px', fontSize: '0.65rem', color: '#5F7A9A' }}>(Default)</span>}
               </span>
               <span style={{ fontFamily: 'monospace', color: '#ffffff', fontWeight: isSelected ? 600 : 400 }}>
-                +{pair.spread.toFixed(2)}
+                {pair.spread >= 0 ? '+' : ''}{pair.spread.toFixed(2)}
               </span>
             </div>
           );

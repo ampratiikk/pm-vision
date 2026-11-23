@@ -1,20 +1,9 @@
 import React, { useState } from 'react';
+import { SecurityQuote } from '@pm-vision/shared';
 
-export interface SecurityInfo {
-  id: string;
-  name: string;
-  symbol: string;
-  ltp: number;
-  change: number;
-  changePct: number;
-  high: number;
-  low: number;
-  open: number;
-  vwap: number;
-  volume: string;
-}
+export type SecurityInfo = SecurityQuote;
 
-const DEFAULT_SECURITIES: SecurityInfo[] = [
+export const DEFAULT_SECURITIES: SecurityInfo[] = [
   { id: 'nifty-spot', name: 'Nifty 50 Spot', symbol: 'NIFTY 50', ltp: 24700.80, change: +110.60, changePct: +0.45, high: 24740.00, low: 24590.20, open: 24650.00, vwap: 24682.40, volume: '14.2M' },
   { id: 'nifty-fut-1', name: 'Nifty Fut #1 (Current)', symbol: 'NIFTY FUT-I', ltp: 24785.40, change: +122.10, changePct: +0.50, high: 24820.00, low: 24670.00, open: 24720.00, vwap: 24760.10, volume: '8.4M' },
   { id: 'nifty-fut-2', name: 'Nifty Fut #2 (Next)', symbol: 'NIFTY FUT-II', ltp: 24860.20, change: +128.50, changePct: +0.52, high: 24895.00, low: 24740.00, open: 24800.00, vwap: 24835.00, volume: '1.2M' },
@@ -23,18 +12,24 @@ const DEFAULT_SECURITIES: SecurityInfo[] = [
 ];
 
 interface HighlightWindowProps {
+  securities?: SecurityInfo[];
   onSelectSecurity?: (sec: SecurityInfo) => void;
   style?: React.CSSProperties;
 }
 
-export const HighlightWindow: React.FC<HighlightWindowProps> = ({ onSelectSecurity, style }) => {
+export const HighlightWindow: React.FC<HighlightWindowProps> = ({
+  securities = DEFAULT_SECURITIES,
+  onSelectSecurity,
+  style
+}) => {
   const [selectedId, setSelectedId] = useState<string>('nifty-fut-1');
-  const current = DEFAULT_SECURITIES.find((s) => s.id === selectedId) || DEFAULT_SECURITIES[1];
-  const spot = DEFAULT_SECURITIES[0];
+  const activeSecurities = securities && securities.length > 0 ? securities : DEFAULT_SECURITIES;
+  const current = activeSecurities.find((s) => s.id === selectedId) || activeSecurities[1];
+  const spot = activeSecurities[0] || DEFAULT_SECURITIES[0];
   const basisPts = (current.ltp - spot.ltp).toFixed(2);
 
   const handleSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const sec = DEFAULT_SECURITIES.find((s) => s.id === e.target.value);
+    const sec = activeSecurities.find((s) => s.id === e.target.value);
     if (sec) {
       setSelectedId(sec.id);
       onSelectSecurity?.(sec);
@@ -55,9 +50,19 @@ export const HighlightWindow: React.FC<HighlightWindowProps> = ({ onSelectSecuri
     }}>
       {/* Header & Basket Dropdown */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#CCCCCC', fontWeight: 600 }}>
-          HIGHLIGHT WINDOW
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#CCCCCC', fontWeight: 600 }}>
+            HIGHLIGHT WINDOW
+          </span>
+          <span style={{
+            display: 'inline-block',
+            width: '6px',
+            height: '6px',
+            borderRadius: '50%',
+            backgroundColor: '#10b981',
+            boxShadow: '0 0 4px #10b981'
+          }} />
+        </div>
         <select
           value={selectedId}
           onChange={handleSelect}
@@ -72,7 +77,7 @@ export const HighlightWindow: React.FC<HighlightWindowProps> = ({ onSelectSecuri
             cursor: 'pointer'
           }}
         >
-          {DEFAULT_SECURITIES.map((s) => (
+          {activeSecurities.map((s) => (
             <option key={s.id} value={s.id}>{s.name}</option>
           ))}
         </select>
@@ -98,30 +103,32 @@ export const HighlightWindow: React.FC<HighlightWindowProps> = ({ onSelectSecuri
         </div>
       </div>
 
-      {/* Grid Stats */}
+      {/* Stats Grid */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(4, 1fr)',
         gap: '0.5rem',
-        paddingTop: '0.5rem',
-        borderTop: '1px solid #141414',
-        fontSize: '0.72rem'
+        backgroundColor: '#0a0a0a',
+        border: '1px solid #1f1f1f',
+        borderRadius: '3px',
+        padding: '0.5rem 0.65rem',
+        fontSize: '0.7rem'
       }}>
         <div>
-          <div style={{ color: '#CCCCCC' }}>HIGH</div>
-          <div style={{ fontFamily: 'monospace', color: '#ffffff' }}>{current.high.toFixed(1)}</div>
+          <div style={{ color: '#CCCCCC' }}>High</div>
+          <div style={{ fontFamily: 'monospace', color: '#ffffff', fontWeight: 600 }}>{current.high.toFixed(2)}</div>
         </div>
         <div>
-          <div style={{ color: '#CCCCCC' }}>LOW</div>
-          <div style={{ fontFamily: 'monospace', color: '#ffffff' }}>{current.low.toFixed(1)}</div>
+          <div style={{ color: '#CCCCCC' }}>Low</div>
+          <div style={{ fontFamily: 'monospace', color: '#ffffff', fontWeight: 600 }}>{current.low.toFixed(2)}</div>
         </div>
         <div>
           <div style={{ color: '#CCCCCC' }}>VWAP</div>
-          <div style={{ fontFamily: 'monospace', color: '#ffffff' }}>{current.vwap.toFixed(1)}</div>
+          <div style={{ fontFamily: 'monospace', color: '#ffffff', fontWeight: 600 }}>{current.vwap.toFixed(2)}</div>
         </div>
         <div>
-          <div style={{ color: '#CCCCCC' }}>VOL</div>
-          <div style={{ fontFamily: 'monospace', color: '#ffffff' }}>{current.volume}</div>
+          <div style={{ color: '#CCCCCC' }}>Volume</div>
+          <div style={{ fontFamily: 'monospace', color: '#ffffff', fontWeight: 600 }}>{current.volume}</div>
         </div>
       </div>
     </div>

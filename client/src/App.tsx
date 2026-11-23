@@ -1,13 +1,16 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { WebSocketMessage } from '@pm-vision/shared';
+import {
+  WebSocketMessage,
+  SecurityQuote,
+  BasisSpreadPair,
+  OptionRow
+} from '@pm-vision/shared';
 import { fetchHealth } from './services/api';
 import { createWebSocketConnection } from './services/websocket';
 import {
   CandlestickChart,
   SAMPLE_CANDLESTICK_DATA,
-  ChartImperativeHandle,
-  CandlestickData,
-  Time
+  ChartImperativeHandle
 } from './components/chart';
 import {
   HighlightWindow,
@@ -26,9 +29,14 @@ export function App() {
   const [wsStatus, setWsStatus] = useState<'online' | 'offline' | 'loading'>('loading');
   const [activeTimeFilter, setActiveTimeFilter] = useState<TimeFilter>('15m');
 
+  // Real-Time Streaming State
+  const [securities, setSecurities] = useState<SecurityQuote[]>([]);
+  const [basisSpreads, setBasisSpreads] = useState<BasisSpreadPair[]>([]);
+  const [optionChain, setOptionChain] = useState<OptionRow[]>([]);
+  const [spotPrice, setSpotPrice] = useState<number>(24700.80);
+  const [tickCount, setTickCount] = useState<number>(0);
+
   const chartRef = useRef<ChartImperativeHandle | null>(null);
-  const [simulatedDay, setSimulatedDay] = useState<number>(27);
-  const [lastSimulatedPrice, setLastSimulatedPrice] = useState<number>(24700.8);
 
   // Resize State
   // 1. Horizontal Split: Sidebar width (default 500px)
@@ -55,7 +63,22 @@ export function App() {
       onOpen: () => setWsStatus('online'),
       onClose: () => setWsStatus('offline'),
       onError: () => setWsStatus('offline'),
-      onMessage: (_msg: WebSocketMessage) => {}
+      onMessage: (msg: WebSocketMessage) => {
+        if (msg.type === 'MARKET_SNAPSHOT' || msg.type === 'MARKET_TICK') {
+          const data = msg.data;
+          if (data) {
+            setSecurities(data.securities);
+            setBasisSpreads(data.basisSpreads);
+            setOptionChain(data.optionChain);
+            setSpotPrice(data.spotPrice);
+            setTickCount((prev) => prev + 1);
+
+            if (data.latestCandle && chartRef.current) {
+              chartRef.current.updateCandle(data.latestCandle);
+            }
+          }
+        }
+      }
     });
 
     return () => {
@@ -128,31 +151,6 @@ export function App() {
     document.body.style.cursor = 'row-resize';
   }, []);
 
-  const handleSimulateUpdate = () => {
-    if (!chartRef.current) return;
-
-    const dayStr = simulatedDay < 10 ? `0${simulatedDay}` : `${simulatedDay}`;
-    const open = lastSimulatedPrice;
-    const change = (Math.random() - 0.48) * 80;
-    const close = parseFloat((open + change).toFixed(2));
-    const high = parseFloat((Math.max(open, close) + Math.random() * 30).toFixed(2));
-    const low = parseFloat((Math.min(open, close) - Math.random() * 30).toFixed(2));
-
-    const simulatedCandle: CandlestickData<Time> = {
-      time: `2026-02-${dayStr}`,
-      open,
-      high,
-      low,
-      close
-    };
-
-    chartRef.current.updateCandle(simulatedCandle);
-    setLastSimulatedPrice(close);
-    if (simulatedDay < 28) {
-      setSimulatedDay((prev) => prev + 1);
-    }
-  };
-
   return (
     <div style={{
       width: '100%',
@@ -200,14 +198,28 @@ export function App() {
 
         {/* Header Right Actions */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          {activePage === 'dashboard' && (
-            <button
-              onClick={handleSimulateUpdate}
-              style={{ fontSize: '0.72rem', padding: '3px 8px', borderColor: '#404040', color: '#ffffff' }}
-            >
-              + Live Candle
-            </button>
-          )}
+          {/* Live Feed Status Pill */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            backgroundColor: 'rgba(95, 122, 154, 0.12)',
+            border: '1px solid rgba(95, 122, 154, 0.35)',
+            borderRadius: '3px',
+            padding: '2px 8px',
+            fontSize: '0.68rem',
+            color: '#5F7A9A',
+            fontWeight: 600
+          }}>
+            <span style={{
+              width: '6px',
+              height: '6px',
+              borderRadius: '50%',
+              backgroundColor: wsStatus === 'online' ? '#10b981' : '#ef4444',
+              boxShadow: wsStatus === 'online' ? '0 0 6px #10b981' : 'none'
+            }} />
+            <span>REAL-TIME STREAM {tickCount > 0 ? `(${tickCount})` : ''}</span>
+          </div>
 
           {/* Live System Health Indicators */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.68rem', color: '#737373' }}>
@@ -391,7 +403,7 @@ export function App() {
                   minHeight: '80px',
                   overflow: 'hidden'
                 }}>
-                  <HighlightWindow style={{ height: '100%' }} />
+                  <HighlightWindow securities={securities} style={{ height: '100%' }} />
                 </div>
 
                 {/* ↕ SUB-VERTICAL RESIZER (Between Highlight Window and Basis Spread) */}
@@ -422,7 +434,7 @@ export function App() {
                   minHeight: '80px',
                   overflow: 'hidden'
                 }}>
-                  <BasisSpreadWidget style={{ height: '100%' }} />
+                  <BasisSpreadWidget pairs={basisSpreads} style={{ height: '100%' }} />
                 </div>
               </div>
 
@@ -458,7 +470,7 @@ export function App() {
                 display: 'flex',
                 flexDirection: 'column'
               }}>
-                <OptionChainWidget />
+                <OptionChainWidget data={optionChain} spotPrice={spotPrice} />
               </div>
             </div>
           </>

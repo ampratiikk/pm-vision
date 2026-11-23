@@ -42,8 +42,8 @@ export interface OptionRow {
   };
 }
 
-const ATM_STRIKE = 24700;
-const SPOT_PRICE = 24700.80;
+export const DEFAULT_ATM_STRIKE = 24700;
+export const DEFAULT_SPOT_PRICE = 24700.80;
 
 /**
  * Generate a comprehensive, realistic option chain dataset around Spot (24,700.80)
@@ -56,7 +56,7 @@ function buildFullOptionChain(): OptionRow[] {
   const step = 50;
 
   for (let strike = minStrike; strike <= maxStrike; strike += step) {
-    const d = strike - SPOT_PRICE; // distance from spot
+    const d = strike - DEFAULT_SPOT_PRICE; // distance from spot
     const absD = Math.abs(d);
 
     // Realistic Gamma (peaks at ATM)
@@ -76,8 +76,8 @@ function buildFullOptionChain(): OptionRow[] {
     // Realistic LTP
     // Time value peak at ATM ~170 pts
     const timeValue = 170 * Math.exp(-(absD * absD) / (2 * 250 * 250));
-    const intrinsicCall = Math.max(0, SPOT_PRICE - strike);
-    const intrinsicPut = Math.max(0, strike - SPOT_PRICE);
+    const intrinsicCall = Math.max(0, DEFAULT_SPOT_PRICE - strike);
+    const intrinsicPut = Math.max(0, strike - DEFAULT_SPOT_PRICE);
 
     const callLtp = parseFloat(Math.max(1.2, intrinsicCall + timeValue).toFixed(2));
     const putLtp = parseFloat(Math.max(1.2, intrinsicPut + timeValue).toFixed(2));
@@ -112,8 +112,20 @@ function buildFullOptionChain(): OptionRow[] {
 
 const FULL_OPTION_CHAIN: OptionRow[] = buildFullOptionChain();
 
-export const OptionChainWidget: React.FC = () => {
-  const [selectedStrike, setSelectedStrike] = useState<number>(ATM_STRIKE);
+export interface OptionChainWidgetProps {
+  data?: OptionRow[];
+  spotPrice?: number;
+}
+
+export const OptionChainWidget: React.FC<OptionChainWidgetProps> = ({
+  data,
+  spotPrice
+}) => {
+  const currentChain = data && data.length > 0 ? data : FULL_OPTION_CHAIN;
+  const currentSpotPrice = spotPrice ?? DEFAULT_SPOT_PRICE;
+  const currentAtmStrike = Math.round(currentSpotPrice / 50) * 50;
+
+  const [selectedStrike, setSelectedStrike] = useState<number>(currentAtmStrike);
   const [showSettings, setShowSettings] = useState<boolean>(false);
 
   // Visible Strikes option: default 10 (10 above ATM, 10 below ATM)
@@ -157,12 +169,12 @@ export const OptionChainWidget: React.FC = () => {
 
   // Filter strikes based on strikeCount (count above & count below ATM)
   const visibleRows = useMemo(() => {
-    const atmIndex = FULL_OPTION_CHAIN.findIndex((row) => row.strike === ATM_STRIKE);
-    if (atmIndex === -1) return FULL_OPTION_CHAIN;
+    const atmIndex = currentChain.findIndex((row) => row.strike === currentAtmStrike);
+    if (atmIndex === -1) return currentChain;
     const startIndex = Math.max(0, atmIndex - strikeCount);
-    const endIndex = Math.min(FULL_OPTION_CHAIN.length, atmIndex + strikeCount + 1);
-    return FULL_OPTION_CHAIN.slice(startIndex, endIndex);
-  }, [strikeCount]);
+    const endIndex = Math.min(currentChain.length, atmIndex + strikeCount + 1);
+    return currentChain.slice(startIndex, endIndex);
+  }, [currentChain, currentAtmStrike, strikeCount]);
 
   // Measure visible call container width to calculate maxScroll
   useEffect(() => {
@@ -280,7 +292,7 @@ export const OptionChainWidget: React.FC = () => {
             border: '1px solid #262626',
             color: '#e5e7eb'
           }}>
-            NIFTY SPOT: {SPOT_PRICE.toFixed(2)}
+            NIFTY SPOT: {currentSpotPrice.toFixed(2)}
           </span>
         </div>
 
@@ -566,10 +578,10 @@ export const OptionChainWidget: React.FC = () => {
 
         {/* ===================== DATA ROWS (CENTER-ALIGNED) ===================== */}
         {visibleRows.map((row) => {
-          const isAtm = row.strike === ATM_STRIKE;
+          const isAtm = row.strike === currentAtmStrike;
           const isSelected = row.strike === selectedStrike;
-          const isCallItm = row.strike < ATM_STRIKE; // In-The-Money: Strike < Spot
-          const isPutItm = row.strike > ATM_STRIKE;   // In-The-Money: Strike > Spot
+          const isCallItm = row.strike < currentAtmStrike; // In-The-Money: Strike < Spot
+          const isPutItm = row.strike > currentAtmStrike;   // In-The-Money: Strike > Spot
 
           const callBg = isSelected ? 'rgba(95, 122, 154, 0.20)' : isCallItm ? '#181818' : '#000000';
           const putBg = isSelected ? 'rgba(95, 122, 154, 0.20)' : isPutItm ? '#181818' : '#000000';
