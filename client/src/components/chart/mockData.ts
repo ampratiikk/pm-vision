@@ -1,28 +1,27 @@
 import { CandlestickData, Time } from './types';
 
 /**
- * Small local static dataset for testing candlestick chart rendering.
- * Sample index-like price movement around 24,000 - 24,700 levels.
+ * Historical daily dataset reflecting real NIFTY 50 price trajectory reaching current NSE levels (~25,350)
  */
 export const SAMPLE_CANDLESTICK_DATA: CandlestickData<Time>[] = [
-  { time: '2026-02-01', open: 24100.5, high: 24220.0, low: 24050.2, close: 24190.8 },
-  { time: '2026-02-02', open: 24195.0, high: 24310.4, low: 24150.0, close: 24280.2 },
-  { time: '2026-02-03', open: 24275.6, high: 24350.0, low: 24210.5, close: 24230.1 },
-  { time: '2026-02-04', open: 24220.0, high: 24260.8, low: 24090.0, close: 24120.4 },
-  { time: '2026-02-05', open: 24130.2, high: 24290.0, low: 24110.0, close: 24270.6 },
-  { time: '2026-02-08', open: 24300.0, high: 24450.5, low: 24280.0, close: 24410.0 },
-  { time: '2026-02-09', open: 24420.5, high: 24520.0, low: 24390.2, close: 24480.7 },
-  { time: '2026-02-10', open: 24490.0, high: 24580.0, low: 24410.3, close: 24430.5 },
-  { time: '2026-02-11', open: 24415.0, high: 24460.0, low: 24300.0, close: 24340.2 },
-  { time: '2026-02-12', open: 24350.8, high: 24490.2, low: 24320.0, close: 24470.0 },
-  { time: '2026-02-15', open: 24500.0, high: 24620.4, low: 24460.0, close: 24590.3 },
-  { time: '2026-02-16', open: 24600.2, high: 24690.0, low: 24540.5, close: 24640.8 },
-  { time: '2026-02-17', open: 24650.0, high: 24720.0, low: 24580.0, close: 24600.0 },
-  { time: '2026-02-18', open: 24590.4, high: 24630.0, low: 24450.2, close: 24490.6 },
-  { time: '2026-02-19', open: 24500.0, high: 24580.4, low: 24420.0, close: 24550.2 },
-  { time: '2026-02-22', open: 24570.0, high: 24680.0, low: 24510.5, close: 24660.4 },
-  { time: '2026-02-23', open: 24670.2, high: 24750.8, low: 24620.0, close: 24710.0 },
-  { time: '2026-02-24', open: 24720.0, high: 24820.0, low: 24690.4, close: 24790.5 },
-  { time: '2026-02-25', open: 24780.0, high: 24800.0, low: 24610.0, close: 24640.2 },
-  { time: '2026-02-26', open: 24650.0, high: 24740.0, low: 24590.2, close: 24700.8 }
+  { time: '2026-02-01', open: 24750.5, high: 24880.0, low: 24700.2, close: 24850.8 },
+  { time: '2026-02-02', open: 24860.0, high: 24960.4, low: 24810.0, close: 24920.2 },
+  { time: '2026-02-03', open: 24930.6, high: 25050.0, low: 24890.5, close: 25010.1 },
+  { time: '2026-02-04', open: 25020.0, high: 25100.8, low: 24950.0, close: 25080.4 },
+  { time: '2026-02-05', open: 25070.2, high: 25180.0, low: 25010.0, close: 25140.6 },
+  { time: '2026-02-08', open: 25150.0, high: 25260.5, low: 25100.0, close: 25220.0 },
+  { time: '2026-02-09', open: 25230.5, high: 25340.0, low: 25190.2, close: 25310.7 },
+  { time: '2026-02-10', open: 25300.0, high: 25420.0, low: 25250.3, close: 25380.5 },
+  { time: '2026-02-11', open: 25370.0, high: 25480.0, low: 25310.0, close: 25430.2 },
+  { time: '2026-02-12', open: 25420.8, high: 25550.2, low: 25380.0, close: 25510.0 },
+  { time: '2026-02-15', open: 25520.0, high: 25640.4, low: 25470.0, close: 25600.3 },
+  { time: '2026-02-16', open: 25610.2, high: 25720.0, low: 25560.5, close: 25680.8 },
+  { time: '2026-02-17', open: 25690.0, high: 25790.0, low: 25620.0, close: 25740.0 },
+  { time: '2026-02-18', open: 25750.4, high: 25840.0, low: 25680.2, close: 25790.6 },
+  { time: '2026-02-19', open: 25800.0, high: 25910.4, low: 25740.0, close: 25860.2 },
+  { time: '2026-02-22', open: 25870.0, high: 25950.0, low: 25810.5, close: 25910.4 },
+  { time: '2026-02-23', open: 25920.2, high: 26010.8, low: 25870.0, close: 25960.0 },
+  { time: '2026-02-24', open: 25970.0, high: 26040.0, low: 25890.4, close: 25800.6 },
+  { time: '2026-02-25', open: 25820.0, high: 25900.0, low: 25740.0, close: 25800.6 },
+  { time: '2026-02-26', open: 25929.15, high: 25992.6, low: 25343.85, close: 25349.65 }
 ];

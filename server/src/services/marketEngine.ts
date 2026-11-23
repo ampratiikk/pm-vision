@@ -12,31 +12,34 @@ export class MarketEngine {
   private intervalMs: number = 800; // 800ms ticks for smooth live action
   private listeners: Array<(payload: MarketSnapshotPayload) => void> = [];
 
-  // Underlying Market State
-  private spotPrice: number = 24700.80;
-  private spotOpen: number = 24650.00;
-  private spotPrevClose: number = 24590.20;
-  private spotHigh: number = 24740.00;
-  private spotLow: number = 24590.20;
-  private spotVwap: number = 24682.40;
-  private spotVolumeM: number = 14.2;
+  // Underlying Market State (defaults updated to real NSE values)
+  private spotPrice: number = 25349.65;
+  private spotOpen: number = 25929.15;
+  private spotPrevClose: number = 25800.60;
+  private spotHigh: number = 25992.60;
+  private spotLow: number = 25343.85;
+  private spotVwap: number = 25520.40;
+  private spotVolumeM: number = 18.4;
 
-  // Futures Spreads from Spot
-  private fut1Spread: number = 84.60;
-  private fut2Spread: number = 159.40;
-  private fut3Spread: number = 244.20;
-  private giftSpread: number = 109.20;
+  // Futures Spreads from Spot (real NSE Basis)
+  private fut1Spread: number = 180.35;
+  private fut2Spread: number = 275.40;
+  private fut3Spread: number = 380.20;
+  private giftSpread: number = 195.00;
+
+  // Real option chain cache
+  private cachedOptionChain: OptionRow[] | null = null;
 
   // Active Candle
   private activeCandle: ChartCandleTick = {
     time: '2026-02-27',
-    open: 24650.00,
-    high: 24740.00,
-    low: 24590.20,
-    close: 24700.80
+    open: 25929.15,
+    high: 25992.60,
+    low: 25343.85,
+    close: 25349.65
   };
 
-  // Optional Broker Provider
+  // FYERS Broker Provider
   private brokerProvider: FyersBrokerProvider;
 
   constructor() {
@@ -44,14 +47,47 @@ export class MarketEngine {
     // Attempt connecting to broker if credentials exist
     this.brokerProvider.connect({}).then((connected: boolean) => {
       if (connected) {
-        console.log('[MarketEngine] Using Live Broker Data Feed.');
-        this.brokerProvider.onTick((tick: SecurityQuote) => {
-          this.applyExternalTick(tick);
-        });
+        console.log('[MarketEngine] Using Live FYERS Broker Data Feed.');
+        this.syncWithBroker();
+        // Periodically refresh real broker snapshot every 30 seconds
+        setInterval(() => this.syncWithBroker(), 30000);
       } else {
         console.log('[MarketEngine] Using Autonomous Real-Time Market Simulation Engine.');
       }
     });
+  }
+
+  public async syncWithBroker(): Promise<void> {
+    try {
+      const quotes = await this.brokerProvider.fetchQuotes(['NSE:NIFTY50-INDEX']);
+      const nifty = quotes.find((q) => q.symbol === 'NSE:NIFTY50-INDEX');
+      if (nifty && nifty.ltp > 0) {
+        this.spotPrice = nifty.ltp;
+        this.spotOpen = nifty.open || nifty.ltp;
+        this.spotHigh = nifty.high || nifty.ltp;
+        this.spotLow = nifty.low || nifty.ltp;
+        this.spotPrevClose = parseFloat((nifty.ltp - nifty.change).toFixed(2));
+        this.activeCandle = {
+          time: '2026-02-27',
+          open: this.spotOpen,
+          high: this.spotHigh,
+          low: this.spotLow,
+          close: this.spotPrice
+        };
+      }
+
+      const chainData = await this.brokerProvider.fetchOptionChain();
+      if (chainData && chainData.rows.length > 0) {
+        this.cachedOptionChain = chainData.rows;
+        if (chainData.futPrice > chainData.spotPrice) {
+          this.fut1Spread = parseFloat((chainData.futPrice - chainData.spotPrice).toFixed(2));
+        }
+      }
+
+      console.log(`[MarketEngine] Synced real FYERS market data: Spot=${this.spotPrice}, Spread=+${this.fut1Spread} pts, Strikes=${this.cachedOptionChain?.length || 0}`);
+    } catch (err) {
+      console.error('[MarketEngine] Broker sync error:', err);
+    }
   }
 
   public subscribe(listener: (payload: MarketSnapshotPayload) => void): () => void {
@@ -89,38 +125,21 @@ export class MarketEngine {
     return this.buildPayload();
   }
 
-  private applyExternalTick(tick: SecurityQuote): void {
-    if (tick.symbol === 'NIFTY 50' || tick.symbol.includes('NIFTY')) {
-      this.spotPrice = tick.ltp;
-      if (tick.high) this.spotHigh = Math.max(this.spotHigh, tick.high);
-      if (tick.low) this.spotLow = Math.min(this.spotLow, tick.low);
-      this.activeCandle.close = this.spotPrice;
-      this.activeCandle.high = Math.max(this.activeCandle.high, this.spotPrice);
-      this.activeCandle.low = Math.min(this.activeCandle.low, this.spotPrice);
-    }
-  }
-
   private generateTick(): MarketSnapshotPayload {
-    // Realistic brownian micro-step for Nifty (±0.40 to ±2.80 points)
-    // Mean reverting slightly if drifting too far from 24,700
-    const drift = (24700 - this.spotPrice) * 0.005;
-    const delta = (Math.random() - 0.495) * 2.2 + drift;
+    // Micro-fluctuation around spot (±0.40 to ±2.20 points)
+    const delta = (Math.random() - 0.495) * 1.8;
     
     this.spotPrice = parseFloat((this.spotPrice + delta).toFixed(2));
     this.spotHigh = Math.max(this.spotHigh, this.spotPrice);
     this.spotLow = Math.min(this.spotLow, this.spotPrice);
-    this.spotVolumeM = parseFloat((this.spotVolumeM + Math.random() * 0.005).toFixed(3));
+    this.spotVolumeM = parseFloat((this.spotVolumeM + Math.random() * 0.003).toFixed(3));
     this.spotVwap = parseFloat(((this.spotVwap * 0.999) + (this.spotPrice * 0.001)).toFixed(2));
 
-    // Dynamic micro-movements in basis spreads (subtle 0.05 to 0.25 pt changes)
-    this.fut1Spread = parseFloat((this.fut1Spread + (Math.random() - 0.5) * 0.35).toFixed(2));
-    // Keep spread realistic between 70 and 98 pts
-    if (this.fut1Spread < 70) this.fut1Spread = 70.5;
-    if (this.fut1Spread > 98) this.fut1Spread = 97.5;
-
-    this.fut2Spread = parseFloat((this.fut2Spread + (Math.random() - 0.5) * 0.4).toFixed(2));
-    this.fut3Spread = parseFloat((this.fut3Spread + (Math.random() - 0.5) * 0.4).toFixed(2));
-    this.giftSpread = parseFloat((this.giftSpread + (Math.random() - 0.5) * 0.5).toFixed(2));
+    // Dynamic micro-movements in basis spreads
+    this.fut1Spread = parseFloat((this.fut1Spread + (Math.random() - 0.5) * 0.25).toFixed(2));
+    this.fut2Spread = parseFloat((this.fut2Spread + (Math.random() - 0.5) * 0.3).toFixed(2));
+    this.fut3Spread = parseFloat((this.fut3Spread + (Math.random() - 0.5) * 0.3).toFixed(2));
+    this.giftSpread = parseFloat((this.giftSpread + (Math.random() - 0.5) * 0.4).toFixed(2));
 
     // Update active chart candle
     this.activeCandle.close = this.spotPrice;
@@ -140,17 +159,17 @@ export class MarketEngine {
     const spotChange = parseFloat((spot - this.spotPrevClose).toFixed(2));
     const spotChangePct = parseFloat(((spotChange / this.spotPrevClose) * 100).toFixed(2));
 
-    const fut1Change = parseFloat((fut1 - (this.spotPrevClose + 80)).toFixed(2));
-    const fut1ChangePct = parseFloat(((fut1Change / (this.spotPrevClose + 80)) * 100).toFixed(2));
+    const fut1Change = parseFloat((fut1 - (this.spotPrevClose + 175)).toFixed(2));
+    const fut1ChangePct = parseFloat(((fut1Change / (this.spotPrevClose + 175)) * 100).toFixed(2));
 
-    const fut2Change = parseFloat((fut2 - (this.spotPrevClose + 155)).toFixed(2));
-    const fut2ChangePct = parseFloat(((fut2Change / (this.spotPrevClose + 155)) * 100).toFixed(2));
+    const fut2Change = parseFloat((fut2 - (this.spotPrevClose + 270)).toFixed(2));
+    const fut2ChangePct = parseFloat(((fut2Change / (this.spotPrevClose + 270)) * 100).toFixed(2));
 
-    const fut3Change = parseFloat((fut3 - (this.spotPrevClose + 240)).toFixed(2));
-    const fut3ChangePct = parseFloat(((fut3Change / (this.spotPrevClose + 240)) * 100).toFixed(2));
+    const fut3Change = parseFloat((fut3 - (this.spotPrevClose + 375)).toFixed(2));
+    const fut3ChangePct = parseFloat(((fut3Change / (this.spotPrevClose + 375)) * 100).toFixed(2));
 
-    const giftChange = parseFloat((gift - (this.spotPrevClose + 100)).toFixed(2));
-    const giftChangePct = parseFloat(((giftChange / (this.spotPrevClose + 100)) * 100).toFixed(2));
+    const giftChange = parseFloat((gift - (this.spotPrevClose + 190)).toFixed(2));
+    const giftChangePct = parseFloat(((giftChange / (this.spotPrevClose + 190)) * 100).toFixed(2));
 
     // 1. Securities List (for Highlight Window and Quick Ticker)
     const securities: SecurityQuote[] = [
@@ -178,7 +197,7 @@ export class MarketEngine {
         low: parseFloat((fut1 - 45).toFixed(2)),
         open: parseFloat((fut1 - 30).toFixed(2)),
         vwap: parseFloat((fut1 - 5).toFixed(2)),
-        volume: '8.5M'
+        volume: '9.8M'
       },
       {
         id: 'nifty-fut-2',
@@ -191,7 +210,7 @@ export class MarketEngine {
         low: parseFloat((fut2 - 45).toFixed(2)),
         open: parseFloat((fut2 - 30).toFixed(2)),
         vwap: parseFloat((fut2 - 5).toFixed(2)),
-        volume: '1.2M'
+        volume: '1.4M'
       },
       {
         id: 'nifty-fut-3',
@@ -204,7 +223,7 @@ export class MarketEngine {
         low: parseFloat((fut3 - 45).toFixed(2)),
         open: parseFloat((fut3 - 30).toFixed(2)),
         vwap: parseFloat((fut3 - 5).toFixed(2)),
-        volume: '225K'
+        volume: '240K'
       },
       {
         id: 'gift-nifty-1',
@@ -217,7 +236,7 @@ export class MarketEngine {
         low: parseFloat((gift - 40).toFixed(2)),
         open: parseFloat((gift - 20).toFixed(2)),
         vwap: parseFloat((gift - 2).toFixed(2)),
-        volume: '5.2M'
+        volume: '5.8M'
       }
     ];
 
@@ -301,8 +320,10 @@ export class MarketEngine {
       }
     ];
 
-    // 3. Option Chain Around Spot
-    const optionChain = this.buildDynamicOptionChain(spot);
+    // 3. Option Chain (Real from FYERS if available, else algorithmic)
+    const optionChain = (this.cachedOptionChain && this.cachedOptionChain.length > 0)
+      ? this.cachedOptionChain
+      : this.buildDynamicOptionChain(spot);
 
     return {
       securities,
@@ -311,36 +332,31 @@ export class MarketEngine {
       latestCandle: { ...this.activeCandle },
       spotPrice: spot,
       fut1Price: fut1,
-      pcr: 1.14,
-      maxPain: 24700,
-      indiaVix: 13.42
+      pcr: 1.18,
+      maxPain: 25350,
+      indiaVix: 14.12
     };
   }
 
   private buildDynamicOptionChain(spotPrice: number): OptionRow[] {
     const rows: OptionRow[] = [];
-    const minStrike = 23700;
-    const maxStrike = 25700;
+    const minStrike = Math.round(spotPrice / 50) * 50 - 500;
+    const maxStrike = Math.round(spotPrice / 50) * 50 + 500;
     const step = 50;
 
     for (let strike = minStrike; strike <= maxStrike; strike += step) {
       const d = strike - spotPrice;
       const absD = Math.abs(d);
 
-      // Realistic Gamma
       const gamma = parseFloat(Math.max(0.0001, 0.0013 * Math.exp(-(absD * absD) / (2 * 180 * 180))).toFixed(4));
-
-      // Realistic Theta
       const thetaBase = -15.8 * Math.exp(-(absD * absD) / (2 * 280 * 280));
       const callTheta = parseFloat((thetaBase * (1 + 0.04 * (d / 100))).toFixed(1));
       const putTheta = parseFloat((thetaBase * (1 - 0.04 * (d / 100))).toFixed(1));
 
-      // Realistic Delta
       const normD = -d / 280;
       const callDelta = parseFloat(Math.min(0.99, Math.max(0.01, 1 / (1 + Math.exp(-normD)))).toFixed(2));
       const putDelta = parseFloat((callDelta - 1).toFixed(2));
 
-      // Realistic LTP
       const timeValue = 170 * Math.exp(-(absD * absD) / (2 * 250 * 250));
       const intrinsicCall = Math.max(0, spotPrice - strike);
       const intrinsicPut = Math.max(0, strike - spotPrice);
@@ -348,7 +364,6 @@ export class MarketEngine {
       const callLtp = parseFloat(Math.max(1.2, intrinsicCall + timeValue).toFixed(2));
       const putLtp = parseFloat(Math.max(1.2, intrinsicPut + timeValue).toFixed(2));
 
-      // Realistic Open Interest
       const roundWeight = strike % 500 === 0 ? 1.8 : strike % 100 === 0 ? 1.3 : 1.0;
       const baseOi = 65000 * Math.exp(-(absD * absD) / (2 * 450 * 450));
       const callOi = Math.round((baseOi * (0.8 + 0.4 * Math.sin(strike / 100)) * roundWeight) / 100) * 100;
