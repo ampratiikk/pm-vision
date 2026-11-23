@@ -10,10 +10,27 @@ import {
 
 export type { CandlestickData, Time };
 
+export interface CandleColorSettings {
+  upBodyColor: string;
+  downBodyColor: string;
+  upBorderColor: string;
+  downBorderColor: string;
+  upWickColor: string;
+  downWickColor: string;
+}
+
+export const DEFAULT_CANDLE_COLORS: CandleColorSettings = {
+  upBodyColor: '#e5e7eb',
+  downBodyColor: '#000000',
+  upBorderColor: '#e5e7eb',
+  downBorderColor: '#e5e7eb',
+  upWickColor: '#e5e7eb',
+  downWickColor: '#e5e7eb'
+};
+
 export interface ChartImperativeHandle {
   /**
    * Update the latest candle or append a new candle in real-time.
-   * Directly feeds into the underlying series (ideal for FYERS WebSocket stream).
    */
   updateCandle: (candle: CandlestickData<Time>) => void;
 
@@ -26,6 +43,11 @@ export interface ChartImperativeHandle {
    * Auto-fit content to the visible viewport.
    */
   fitContent: () => void;
+
+  /**
+   * Dynamically apply candlestick series visual options (colors, borders, wicks).
+   */
+  applySeriesOptions: (options: CandlestickSeriesPartialOptions) => void;
 
   /**
    * Direct access to the Lightweight Charts IChartApi instance.
@@ -50,19 +72,14 @@ export interface CandlestickChartProps {
   chartOptions?: DeepPartial<ChartOptions>;
 
   /**
-   * Optional custom candlestick visual styling (colors, wick visibility, etc.).
+   * Optional custom series options (colors, borders, wicks).
    */
   seriesOptions?: CandlestickSeriesPartialOptions;
 
   /**
-   * Container height. Defaults to 400px.
+   * Height in pixels or percentage CSS string (e.g. "100%").
    */
   height?: number | string;
-
-  /**
-   * Optional inline styles for the outer container.
-   */
-  style?: React.CSSProperties;
 
   /**
    * Optional CSS class name.
@@ -70,7 +87,17 @@ export interface CandlestickChartProps {
   className?: string;
 
   /**
-   * Callback fired once chart and series have mounted.
+   * Optional inline style.
+   */
+  style?: React.CSSProperties;
+
+  /**
+   * Optional callback when chart instance and series are initialized.
    */
   onChartReady?: (handle: ChartImperativeHandle) => void;
+
+  /**
+   * Optional callback when user right-clicks on chart canvas.
+   */
+  onContextMenu?: (e: React.MouseEvent) => void;
 }

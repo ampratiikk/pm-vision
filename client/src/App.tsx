@@ -4,8 +4,7 @@ import {
   SecurityQuote,
   BasisSpreadPair,
   OptionRow,
-  ExpiryOption,
-  MarketStatus
+  ExpiryOption
 } from '@pm-vision/shared';
 import { fetchHealth, fetchMarketHistory, fetchOptionChainByExpiry } from './services/api';
 import { createWebSocketConnection } from './services/websocket';
@@ -14,7 +13,9 @@ import {
   SAMPLE_CANDLESTICK_DATA,
   ChartImperativeHandle,
   CandlestickData,
-  Time
+  Time,
+  CandleColorSettings,
+  DEFAULT_CANDLE_COLORS
 } from './components/chart';
 import {
   HighlightWindow,
@@ -22,6 +23,7 @@ import {
   OptionChainWidget,
   NiftyHeatmap
 } from './components/dashboard';
+import { SettingsModal } from './components/dashboard/SettingsModal';
 import logoImg from './assets/logo.png';
 
 type AppPage = 'dashboard' | 'heatmap';
@@ -42,12 +44,61 @@ const ALL_TIMEFRAMES = [
 
 const DEFAULT_PINNED = ['1m', '5m', '15m', '1H', '1D'];
 
+function getMarketSessionInfo(): { label: string; dotColor: string } {
+  const now = new Date();
+  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+  const istDate = new Date(utc + 3600000 * 5.5);
+
+  const day = istDate.getDay(); // 0 is Sunday, 6 is Saturday
+  if (day === 0 || day === 6) {
+    return { label: 'Markets Closed', dotColor: '#ef4444' };
+  }
+
+  const currentMinute = istDate.getHours() * 60 + istDate.getMinutes();
+  const preStart = 9 * 60; // 09:00 AM
+  const normalStart = 9 * 60 + 15; // 09:15 AM
+  const normalEnd = 15 * 60 + 30; // 03:30 PM
+  const postEnd = 16 * 60; // 04:00 PM
+
+  if (currentMinute >= preStart && currentMinute < normalStart) {
+    return { label: 'Pre-Market Session', dotColor: '#eab308' };
+  }
+  if (currentMinute >= normalStart && currentMinute <= normalEnd) {
+    return { label: 'Markets Live', dotColor: '#10b981' };
+  }
+  if (currentMinute > normalEnd && currentMinute <= postEnd) {
+    return { label: 'Post-Market Session', dotColor: '#eab308' };
+  }
+  return { label: 'Markets Closed', dotColor: '#ef4444' };
+}
+
 export function App() {
   const [activePage, setActivePage] = useState<AppPage>('dashboard');
   const [healthStatus, setHealthStatus] = useState<'online' | 'offline' | 'loading'>('loading');
   const [wsStatus, setWsStatus] = useState<'online' | 'offline' | 'loading'>('loading');
   const [activeTimeFilter, setActiveTimeFilter] = useState<string>('15m');
   const [isChartLoading, setIsChartLoading] = useState<boolean>(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+
+  // Market session status (Markets Live / Markets Closed / Pre / Post)
+  const [sessionInfo, setSessionInfo] = useState<{ label: string; dotColor: string }>(getMarketSessionInfo);
+
+  // Candlestick Appearance Customization
+  const [candleColors, setCandleColors] = useState<CandleColorSettings>(() => {
+    try {
+      const saved = localStorage.getItem('pm_vision_candle_colors');
+      return saved ? JSON.parse(saved) : DEFAULT_CANDLE_COLORS;
+    } catch {
+      return DEFAULT_CANDLE_COLORS;
+    }
+  });
+
+  // Chart Right-Click Context Menu State
+  const [contextMenu, setContextMenu] = useState<{ visible: boolean; x: number; y: number }>({
+    visible: false,
+    x: 0,
+    y: 0
+  });
 
   // Pinned Timeframes state (persisted to localStorage)
   const [pinnedTimeframes, setPinnedTimeframes] = useState<string[]>(() => {
@@ -69,8 +120,6 @@ export function App() {
   const [expiries, setExpiries] = useState<ExpiryOption[]>([]);
   const [selectedExpiry, setSelectedExpiry] = useState<string>('');
   const [spotPrice, setSpotPrice] = useState<number>(25349.65);
-  const [tickCount, setTickCount] = useState<number>(0);
-  const [marketStatus, setMarketStatus] = useState<MarketStatus>('CLOSED');
 
   // Chart Historical Data State
   const [chartCandles, setChartCandles] = useState<CandlestickData<Time>[]>(SAMPLE_CANDLESTICK_DATA);
@@ -144,6 +193,51 @@ export function App() {
     }
   };
 
+  const handleUpdateCandleColors = (newColors: CandleColorSettings) => {
+    setCandleColors(newColors);
+    try {
+      localStorage.setItem('pm_vision_candle_colors', JSON.stringify(newColors));
+    } catch {}
+    chartRef.current?.applySeriesOptions({
+      upColor: newColors.upBodyColor,
+      downColor: newColors.downBodyColor,
+      borderUpColor: newColors.upBorderColor,
+      borderDownColor: newColors.downBorderColor,
+      wickUpColor: newColors.upWickColor,
+      wickDownColor: newColors.downWickColor
+    });
+  };
+
+  const handleResetCandleColors = () => {
+    handleUpdateCandleColors(DEFAULT_CANDLE_COLORS);
+  };
+
+  const handleChartContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setContextMenu({
+      visible: true,
+      x: e.clientX,
+      y: e.clientY
+    });
+  };
+
+  // Close context menu on outside click
+  useEffect(() => {
+    const handleWindowClick = () => {
+      setContextMenu((prev) => (prev.visible ? { ...prev, visible: false } : prev));
+    };
+    window.addEventListener('click', handleWindowClick);
+    return () => window.removeEventListener('click', handleWindowClick);
+  }, []);
+
+  // Check market session every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setSessionInfo(getMarketSessionInfo());
+    }, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
   useEffect(() => {
     fetchHealth()
       .then(() => setHealthStatus('online'))
@@ -164,13 +258,10 @@ export function App() {
             setBasisSpreads(data.basisSpreads);
             setOptionChain(data.optionChain);
             setSpotPrice(data.spotPrice);
-            setTickCount((prev) => prev + 1);
 
-            if (data.marketStatus) setMarketStatus(data.marketStatus);
             if (data.expiries && data.expiries.length > 0) setExpiries(data.expiries);
             if (data.selectedExpiry) setSelectedExpiry(data.selectedExpiry);
 
-            // Only update live tick on chart if market is genuinely open
             if (data.marketStatus === 'OPEN' && data.latestCandle && chartRef.current) {
               chartRef.current.updateCandle(data.latestCandle as any);
             }
@@ -189,7 +280,7 @@ export function App() {
     const handleMouseMove = (e: MouseEvent) => {
       if (isDraggingH) {
         const totalW = window.innerWidth;
-        const newWidth = totalW - e.clientX - 42;
+        const newWidth = totalW - e.clientX;
         const clampedWidth = Math.max(340, Math.min(newWidth, totalW - 450));
         setSidebarWidth(clampedWidth);
       }
@@ -270,13 +361,13 @@ export function App() {
         backgroundColor: '#000000',
         flexShrink: 0
       }}>
-        {/* Brand Logo */}
+        {/* Brand Logo (Transparent background, clean & crisp on pitch black) */}
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <img
             src={logoImg}
             alt="PM Vision Logo"
             style={{
-              height: '34px',
+              height: '32px',
               width: 'auto',
               objectFit: 'contain',
               display: 'block'
@@ -284,59 +375,133 @@ export function App() {
           />
         </div>
 
-        {/* Header Right Actions */}
+        {/* Header Right: Clean Market Status only */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          {/* Market Status Pill */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '6px',
-            backgroundColor: marketStatus === 'OPEN' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(95, 122, 154, 0.12)',
-            border: marketStatus === 'OPEN' ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid rgba(95, 122, 154, 0.35)',
-            borderRadius: '3px',
-            padding: '2px 8px',
-            fontSize: '0.68rem',
-            color: marketStatus === 'OPEN' ? '#10b981' : '#CCCCCC',
-            fontWeight: 600
+            gap: '8px',
+            fontSize: '0.75rem',
+            color: '#e5e7eb',
+            fontWeight: 600,
+            padding: '4px 10px',
+            borderRadius: '4px',
+            backgroundColor: 'rgba(255, 255, 255, 0.03)',
+            border: '1px solid #1f1f1f'
           }}>
             <span style={{
-              width: '6px',
-              height: '6px',
+              width: '8px',
+              height: '8px',
               borderRadius: '50%',
-              backgroundColor: marketStatus === 'OPEN' ? '#10b981' : '#f59e0b',
-              boxShadow: marketStatus === 'OPEN' ? '0 0 6px #10b981' : 'none'
+              backgroundColor: sessionInfo.dotColor,
+              boxShadow: `0 0 6px ${sessionInfo.dotColor}`
             }} />
-            <span>
-              {marketStatus === 'OPEN' ? `NSE LIVE (${tickCount})` : 'NSE MARKET CLOSED (OFFICIAL CLOSING DATA)'}
-            </span>
-          </div>
-
-          {/* Live System Health Indicators */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.68rem', color: '#737373' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <span style={{
-                width: '6px',
-                height: '6px',
-                borderRadius: '50%',
-                backgroundColor: healthStatus === 'online' ? '#10b981' : '#ef4444'
-              }} />
-              <span>API {healthStatus}</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <span style={{
-                width: '6px',
-                height: '6px',
-                borderRadius: '50%',
-                backgroundColor: wsStatus === 'online' ? '#10b981' : '#ef4444'
-              }} />
-              <span>WS {wsStatus}</span>
-            </div>
+            <span>{sessionInfo.label}</span>
           </div>
         </div>
       </header>
 
-      {/* Main Workspace */}
+      {/* Main Workspace with Left Panel Navigation */}
       <div style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>
+        {/* ===================== LEFT PANEL (DASHBOARD, HEATMAP, SETTINGS) ===================== */}
+        <aside style={{
+          width: '44px',
+          borderRight: '1px solid #1a1a1a',
+          backgroundColor: '#050505',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '12px 0',
+          flexShrink: 0,
+          zIndex: 30
+        }}>
+          {/* Top of Left Panel: Main Dashboard and Heatmap immediately below it */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'center' }}>
+            {/* 1. Main Dashboard Icon */}
+            <button
+              onClick={() => setActivePage('dashboard')}
+              title="Main Dashboard"
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '4px',
+                backgroundColor: activePage === 'dashboard' ? 'rgba(95, 122, 154, 0.2)' : 'transparent',
+                border: activePage === 'dashboard' ? '1px solid #5F7A9A' : '1px solid transparent',
+                color: activePage === 'dashboard' ? '#5F7A9A' : '#737373',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 0,
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="7" height="7"></rect>
+                <rect x="14" y="3" width="7" height="7"></rect>
+                <rect x="14" y="14" width="7" height="7"></rect>
+                <rect x="3" y="14" width="7" height="7"></rect>
+              </svg>
+            </button>
+
+            {/* 2. Heatmap Icon (Below Main Dashboard) */}
+            <button
+              onClick={() => setActivePage('heatmap')}
+              title="NIFTY 50 Heatmap"
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '4px',
+                backgroundColor: activePage === 'heatmap' ? 'rgba(95, 122, 154, 0.2)' : 'transparent',
+                border: activePage === 'heatmap' ? '1px solid #5F7A9A' : '1px solid transparent',
+                color: activePage === 'heatmap' ? '#5F7A9A' : '#737373',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 0,
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="2" width="9" height="11" rx="1"></rect>
+                <rect x="13" y="2" width="9" height="6" rx="1"></rect>
+                <rect x="13" y="10" width="9" height="12" rx="1"></rect>
+                <rect x="2" y="15" width="9" height="7" rx="1"></rect>
+              </svg>
+            </button>
+          </div>
+
+          {/* Bottom of Left Panel: Settings Icon (Bottom Left Corner) */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <button
+              onClick={() => setIsSettingsOpen(true)}
+              title="Platform & Chart Settings (API, WS, Candle Colors)"
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '4px',
+                backgroundColor: isSettingsOpen ? 'rgba(95, 122, 154, 0.2)' : 'transparent',
+                border: isSettingsOpen ? '1px solid #5F7A9A' : '1px solid transparent',
+                color: isSettingsOpen ? '#5F7A9A' : '#737373',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 0,
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+              </svg>
+            </button>
+          </div>
+        </aside>
+
+        {/* Content Area */}
         {activePage === 'dashboard' ? (
           <>
             {/* Left Area: Candlestick Chart */}
@@ -563,12 +728,23 @@ export function App() {
               </div>
 
               {/* Main Visual Display: Candlestick Chart */}
-              <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
+              <div
+                onContextMenu={handleChartContextMenu}
+                style={{ flex: 1, position: 'relative', minHeight: 0 }}
+              >
                 <CandlestickChart
                   ref={chartRef}
                   data={chartCandles}
                   height="100%"
                   style={{ height: '100%' }}
+                  seriesOptions={{
+                    upColor: candleColors.upBodyColor,
+                    downColor: candleColors.downBodyColor,
+                    borderUpColor: candleColors.upBorderColor,
+                    borderDownColor: candleColors.downBorderColor,
+                    wickUpColor: candleColors.upWickColor,
+                    wickDownColor: candleColors.downWickColor
+                  }}
                 />
               </div>
             </div>
@@ -715,81 +891,76 @@ export function App() {
             <NiftyHeatmap />
           </div>
         )}
-
-        {/* Minimalist Right Sidebar Navigation Rail */}
-        <aside style={{
-          width: '42px',
-          borderLeft: '1px solid #1a1a1a',
-          backgroundColor: '#050505',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '10px 0',
-          flexShrink: 0,
-          zIndex: 30
-        }}>
-          {/* Top Rail Tools */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' }}>
-            {/* Dashboard Icon */}
-            <button
-              onClick={() => setActivePage('dashboard')}
-              title="Trading & Analysis Dashboard"
-              style={{
-                width: '30px',
-                height: '30px',
-                borderRadius: '4px',
-                backgroundColor: activePage === 'dashboard' ? 'rgba(95, 122, 154, 0.2)' : 'transparent',
-                border: activePage === 'dashboard' ? '1px solid #5F7A9A' : '1px solid transparent',
-                color: activePage === 'dashboard' ? '#5F7A9A' : '#737373',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: 0,
-                transition: 'all 0.15s ease'
-              }}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="3" width="7" height="7"></rect>
-                <rect x="14" y="3" width="7" height="7"></rect>
-                <rect x="14" y="14" width="7" height="7"></rect>
-                <rect x="3" y="14" width="7" height="7"></rect>
-              </svg>
-            </button>
-          </div>
-
-          {/* Bottom Rail Action: Dedicated NIFTY 50 Heatmap Switcher */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center' }}>
-            <button
-              onClick={() => setActivePage(activePage === 'heatmap' ? 'dashboard' : 'heatmap')}
-              title="Full-Page NIFTY 50 Market Heatmap"
-              style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '4px',
-                backgroundColor: activePage === 'heatmap' ? '#5F7A9A' : 'rgba(255, 255, 255, 0.04)',
-                border: activePage === 'heatmap' ? '1px solid #ffffff' : '1px solid #262626',
-                color: activePage === 'heatmap' ? '#000000' : '#CCCCCC',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: 0,
-                transition: 'all 0.2s ease',
-                boxShadow: activePage === 'heatmap' ? '0 0 10px rgba(95, 122, 154, 0.5)' : 'none'
-              }}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="2" y="2" width="9" height="11" rx="1"></rect>
-                <rect x="13" y="2" width="9" height="6" rx="1"></rect>
-                <rect x="13" y="10" width="9" height="12" rx="1"></rect>
-                <rect x="2" y="15" width="9" height="7" rx="1"></rect>
-              </svg>
-            </button>
-          </div>
-        </aside>
       </div>
+
+      {/* ===================== RIGHT-CLICK CONTEXT MENU ON CHART ===================== */}
+      {contextMenu.visible && (
+        <div style={{
+          position: 'fixed',
+          top: contextMenu.y,
+          left: contextMenu.x,
+          backgroundColor: '#0a0a0a',
+          border: '1px solid #262626',
+          borderRadius: '4px',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.95)',
+          padding: '4px 0',
+          zIndex: 90,
+          minWidth: '150px'
+        }}>
+          <div
+            onClick={() => {
+              chartRef.current?.fitContent();
+              setContextMenu((prev) => ({ ...prev, visible: false }));
+            }}
+            style={{
+              padding: '6px 12px',
+              fontSize: '0.72rem',
+              color: '#e5e7eb',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(95, 122, 154, 0.2)')}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+            <span>Reset Chart</span>
+          </div>
+          <div style={{ height: '1px', backgroundColor: '#1a1a1a', margin: '4px 0' }} />
+          <div
+            onClick={() => {
+              setIsSettingsOpen(true);
+              setContextMenu((prev) => ({ ...prev, visible: false }));
+            }}
+            style={{
+              padding: '6px 12px',
+              fontSize: '0.72rem',
+              color: '#e5e7eb',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(95, 122, 154, 0.2)')}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+            <span>Settings...</span>
+          </div>
+        </div>
+      )}
+
+      {/* ===================== SETTINGS MODAL ===================== */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        candleColors={candleColors}
+        onUpdateCandleColors={handleUpdateCandleColors}
+        onResetCandleColors={handleResetCandleColors}
+        apiStatus={healthStatus}
+        wsStatus={wsStatus}
+      />
     </div>
   );
 }

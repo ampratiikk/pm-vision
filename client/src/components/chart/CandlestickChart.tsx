@@ -237,7 +237,8 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
       height = 420,
       style,
       className,
-      onChartReady
+      onChartReady,
+      onContextMenu
     },
     ref
   ) => {
@@ -290,6 +291,9 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
         },
         fitContent: () => {
           chartRef.current?.timeScale().fitContent();
+        },
+        applySeriesOptions: (opts) => {
+          seriesRef.current?.applyOptions(opts);
         },
         getChart: () => chartRef.current,
         getSeries: () => seriesRef.current
@@ -491,6 +495,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
             setOhlcInfo(computeOHLCInfo(newData, newData.length - 1));
           },
           fitContent: () => chart.timeScale().fitContent(),
+          applySeriesOptions: (opts) => series.applyOptions(opts),
           getChart: () => chart,
           getSeries: () => series
         });
@@ -529,12 +534,19 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
       }
     }, [data]);
 
+    useEffect(() => {
+      if (seriesRef.current && seriesOptions) {
+        seriesRef.current.applyOptions(seriesOptions);
+      }
+    }, [seriesOptions]);
+
     const changePctSign = ohlcInfo && ohlcInfo.changePct > 0 ? '+' : '';
     const changeValSign = ohlcInfo && ohlcInfo.changeVal > 0 ? '+' : '';
 
     return (
       <div
         className={className}
+        onContextMenu={onContextMenu}
         style={{
           width: '100%',
           height: typeof height === 'number' ? `${height}px` : height,
