@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { SecurityQuote, isGiftNiftyMarketOpen, getGiftNiftySessionInfo } from '@pm-vision/shared';
+import React, { useState, useMemo, useEffect } from 'react';
+import { SecurityQuote } from '@pm-vision/shared';
 import {
   WatchlistItem,
   NIFTY_50_CONSTITUENTS,
@@ -17,6 +17,8 @@ interface WatchlistDrawerProps {
   securities?: SecurityQuote[];
   activeSymbol?: string;
   onSelectSymbol?: (symbol: string) => void;
+  highlightSymbols?: string[];
+  onToggleHighlightSymbol?: (symbol: string) => void;
 }
 
 export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
@@ -26,25 +28,35 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
   onChangeMode,
   securities = [],
   activeSymbol = 'NIFTY 50',
-  onSelectSymbol
+  onSelectSymbol,
+  highlightSymbols = [],
+  onToggleHighlightSymbol
 }) => {
   const [activeTab, setActiveTab] = useState<'nifty50' | 'indices'>('nifty50');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSector, setSelectedSector] = useState('All Sectors');
   const [collapsedSectors, setCollapsedSectors] = useState<Record<string, boolean>>({});
 
-  // Dynamic GIFT NIFTY live session info
-  const [giftNiftySession, setGiftNiftySession] = useState(getGiftNiftySessionInfo);
-  const [isGiftLive, setIsGiftLive] = useState(isGiftNiftyMarketOpen);
+  // Context menu for right-clicking any watchlist item
+  const [contextMenu, setContextMenu] = useState<{
+    visible: boolean;
+    x: number;
+    y: number;
+    item: WatchlistItem | null;
+  }>({
+    visible: false,
+    x: 0,
+    y: 0,
+    item: null
+  });
 
+  // Close context menu on outside click
   useEffect(() => {
-    const update = () => {
-      setGiftNiftySession(getGiftNiftySessionInfo());
-      setIsGiftLive(isGiftNiftyMarketOpen());
+    const handleCloseMenu = () => {
+      setContextMenu((prev) => (prev.visible ? { ...prev, visible: false } : prev));
     };
-    update();
-    const timer = setInterval(update, 10000);
-    return () => clearInterval(timer);
+    window.addEventListener('click', handleCloseMenu);
+    return () => window.removeEventListener('click', handleCloseMenu);
   }, []);
 
   // Sync quotes with live securities stream from WebSocket
@@ -87,7 +99,7 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
     return map;
   }, [filteredNifty50]);
 
-  // Filtered Indices
+  // Filtered Indices (clean list without gift nifty)
   const filteredIndices = NIFTY_INDICES.filter((item) => {
     return (
       item.symbol.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -111,60 +123,76 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
     };
   };
 
-  // Outer container styles based on active mode
+  const handleItemContextMenu = (e: React.MouseEvent, item: WatchlistItem) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({
+      visible: true,
+      x: e.clientX,
+      y: e.clientY,
+      item
+    });
+  };
+
+  // Styles based on mode
   const getContainerStyle = (): React.CSSProperties => {
-    if (mode === 'fullscreen') {
-      return {
-        position: 'absolute',
-        inset: 0,
-        zIndex: 85,
-        backgroundColor: '#000000',
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden'
-      };
-    }
-
-    if (mode === 'overlay') {
-      return {
-        position: 'absolute',
-        top: 0,
-        right: 0,
-        bottom: 0,
-        width: '380px',
-        maxWidth: '90vw',
-        zIndex: 50,
-        backgroundColor: '#050505',
-        borderLeft: '1px solid #262626',
-        boxShadow: '-10px 0 35px rgba(0, 0, 0, 0.95)',
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden'
-      };
-    }
-
-    // Docked mode: fits directly into the layout column
-    return {
-      width: '100%',
-      height: '100%',
-      backgroundColor: '#050505',
+    const base: React.CSSProperties = {
+      backgroundColor: '#0a0a0a',
+      color: '#e5e7eb',
       display: 'flex',
       flexDirection: 'column',
-      overflow: 'hidden'
+      zIndex: 50,
+      fontFamily: 'Quicksand, sans-serif'
+    };
+
+    if (mode === 'docked') {
+      return {
+        ...base,
+        width: '100%',
+        height: '100%',
+        position: 'relative'
+      };
+    }
+
+    if (mode === 'fullscreen') {
+      return {
+        ...base,
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        width: '100vw',
+        height: '100vh',
+        zIndex: 100
+      };
+    }
+
+    // Default 'overlay' mode: Flyover drawer that does not distort main dashboard
+    return {
+      ...base,
+      position: 'fixed',
+      top: '48px',
+      right: '48px',
+      width: '420px',
+      height: 'calc(100vh - 48px)',
+      boxShadow: '-8px 0 32px rgba(0, 0, 0, 0.85)',
+      borderLeft: '1px solid #1f1f1f',
+      borderBottom: '1px solid #1f1f1f'
     };
   };
 
   return (
     <div style={getContainerStyle()}>
-      {/* Header Bar */}
+      {/* Drawer Top Navigation Bar */}
       <div
         style={{
-          padding: '0.75rem 1rem',
+          padding: '8px 12px',
           borderBottom: '1px solid #1a1a1a',
-          backgroundColor: '#080808',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
+          backgroundColor: '#050505',
           flexShrink: 0
         }}
       >
@@ -175,104 +203,98 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
           <span
             style={{
               fontSize: '0.62rem',
-              fontWeight: 600,
+              backgroundColor: 'rgba(95, 122, 154, 0.2)',
+              color: '#5F7A9A',
               padding: '1px 6px',
               borderRadius: '2px',
-              backgroundColor: 'rgba(95, 122, 154, 0.15)',
-              color: '#5F7A9A',
-              border: '1px solid rgba(95, 122, 154, 0.3)',
-              textTransform: 'uppercase'
+              fontWeight: 600
             }}
           >
-            {mode}
+            {activeTab === 'nifty50' ? 'NIFTY 50' : 'INDICES'}
           </span>
         </div>
 
-        {/* Action Controls: Fit into Dashboard, Full Size, Back to Slider, Close */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-          {/* Fit into Dashboard Button (dock) */}
-          {mode !== 'docked' && (
-            <button
-              onClick={() => onChangeMode('docked')}
-              title="Fit into Main Dashboard layout"
-              style={{
-                padding: '3px 8px',
-                fontSize: '0.66rem',
-                backgroundColor: '#141414',
-                border: '1px solid #262626',
-                color: '#a3a3a3',
-                borderRadius: '3px',
-                cursor: 'pointer'
-              }}
-            >
-              Fit in Dashboard
-            </button>
-          )}
+        {/* View Mode & Close Actions */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          {/* Dock / Fit into Main Dashboard Button */}
+          <button
+            onClick={() => onChangeMode(mode === 'docked' ? 'overlay' : 'docked')}
+            title={mode === 'docked' ? 'Float as Upper Layer (Slider)' : 'Fit into Main Dashboard (Docked)'}
+            style={{
+              padding: '3px 8px',
+              fontSize: '0.68rem',
+              backgroundColor: mode === 'docked' ? 'rgba(95, 122, 154, 0.3)' : '#141414',
+              color: mode === 'docked' ? '#5F7A9A' : '#CCCCCC',
+              border: `1px solid ${mode === 'docked' ? '#5F7A9A' : '#262626'}`,
+              borderRadius: '3px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+              <line x1="15" y1="3" x2="15" y2="21"></line>
+            </svg>
+            <span>{mode === 'docked' ? 'Undock' : 'Dock'}</span>
+          </button>
 
-          {/* Full Size / Maximize Button */}
-          {mode !== 'fullscreen' && (
-            <button
-              onClick={() => onChangeMode('fullscreen')}
-              title="Full size the watchlist"
-              style={{
-                padding: '3px 8px',
-                fontSize: '0.66rem',
-                backgroundColor: '#141414',
-                border: '1px solid #262626',
-                color: '#a3a3a3',
-                borderRadius: '3px',
-                cursor: 'pointer'
-              }}
-            >
-              Full Size
-            </button>
-          )}
-
-          {/* Back to Slider / Fly-over Button (shown in docked or fullscreen) */}
-          {mode !== 'overlay' && (
-            <button
-              onClick={() => onChangeMode('overlay')}
-              title="Return to Slider fly-over view"
-              style={{
-                padding: '3px 8px',
-                fontSize: '0.66rem',
-                backgroundColor: 'rgba(95, 122, 154, 0.2)',
-                border: '1px solid #5F7A9A',
-                color: '#ffffff',
-                borderRadius: '3px',
-                cursor: 'pointer',
-                fontWeight: 600
-              }}
-            >
-              Slider View
-            </button>
-          )}
+          {/* Fullscreen Button */}
+          <button
+            onClick={() => onChangeMode(mode === 'fullscreen' ? 'overlay' : 'fullscreen')}
+            title={mode === 'fullscreen' ? 'Exit Full Screen' : 'Full Screen Watchlist'}
+            style={{
+              padding: '3px 8px',
+              fontSize: '0.68rem',
+              backgroundColor: mode === 'fullscreen' ? 'rgba(95, 122, 154, 0.3)' : '#141414',
+              color: mode === 'fullscreen' ? '#5F7A9A' : '#CCCCCC',
+              border: `1px solid ${mode === 'fullscreen' ? '#5F7A9A' : '#262626'}`,
+              borderRadius: '3px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="15 3 21 3 21 9"></polyline>
+              <polyline points="9 21 3 21 3 15"></polyline>
+              <line x1="21" y1="3" x2="14" y2="10"></line>
+              <line x1="3" y1="21" x2="10" y2="14"></line>
+            </svg>
+            <span>{mode === 'fullscreen' ? 'Exit Full' : 'Full'}</span>
+          </button>
 
           {/* Close Button */}
           <button
             onClick={onClose}
             title="Close Watchlist"
             style={{
-              padding: '2px 7px',
-              fontSize: '1rem',
+              padding: '3px 7px',
+              fontSize: '0.72rem',
               backgroundColor: 'transparent',
+              color: '#9ca3af',
               border: 'none',
-              color: '#a3a3a3',
               cursor: 'pointer',
-              lineHeight: 1
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
             }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = '#ffffff')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = '#9ca3af')}
           >
-            ×
+            ✕
           </button>
         </div>
       </div>
 
-      {/* Navigation Tabs: NIFTY 50 vs NIFTY INDICES */}
+      {/* Tabs: NIFTY 50 vs NIFTY INDICES */}
       <div
         style={{
           display: 'flex',
           borderBottom: '1px solid #1a1a1a',
-          backgroundColor: '#050505',
+          backgroundColor: '#080808',
           flexShrink: 0
         }}
       >
@@ -281,17 +303,17 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
           style={{
             flex: 1,
             padding: '7px 0',
-            fontSize: '0.70rem',
+            fontSize: '0.74rem',
             fontWeight: activeTab === 'nifty50' ? 700 : 500,
-            color: activeTab === 'nifty50' ? '#ffffff' : '#737373',
-            backgroundColor: activeTab === 'nifty50' ? '#0f0f0f' : 'transparent',
+            color: activeTab === 'nifty50' ? '#5F7A9A' : '#737373',
+            backgroundColor: activeTab === 'nifty50' ? '#0d0d0d' : 'transparent',
             border: 'none',
             borderBottom: activeTab === 'nifty50' ? '2px solid #5F7A9A' : '2px solid transparent',
             cursor: 'pointer',
             transition: 'all 0.15s ease'
           }}
         >
-          NIFTY 50 ({NIFTY_50_CONSTITUENTS.length})
+          NIFTY 50 (50 Stocks)
         </button>
 
         <button
@@ -299,124 +321,115 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
           style={{
             flex: 1,
             padding: '7px 0',
-            fontSize: '0.70rem',
+            fontSize: '0.74rem',
             fontWeight: activeTab === 'indices' ? 700 : 500,
-            color: activeTab === 'indices' ? '#ffffff' : '#737373',
-            backgroundColor: activeTab === 'indices' ? '#0f0f0f' : 'transparent',
+            color: activeTab === 'indices' ? '#5F7A9A' : '#737373',
+            backgroundColor: activeTab === 'indices' ? '#0d0d0d' : 'transparent',
             border: 'none',
             borderBottom: activeTab === 'indices' ? '2px solid #5F7A9A' : '2px solid transparent',
             cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '6px',
             transition: 'all 0.15s ease'
           }}
         >
-          <span>NIFTY INDICES ({NIFTY_INDICES.length})</span>
-          {isGiftLive && (
-            <span
-              style={{
-                width: '6px',
-                height: '6px',
-                borderRadius: '50%',
-                backgroundColor: '#10b981',
-                boxShadow: '0 0 5px #10b981'
-              }}
-              title="GIFT NIFTY Live Session Active"
-            />
-          )}
+          NIFTY INDICES
         </button>
       </div>
 
-      {/* Search & Filter Controls */}
+      {/* Search Bar & Sector Filter (Sector filter visible on Tab 1) */}
       <div
         style={{
-          padding: '0.65rem 0.85rem',
-          borderBottom: '1px solid #1a1a1a',
-          backgroundColor: '#080808',
+          padding: '8px 12px',
+          borderBottom: '1px solid #171717',
           display: 'flex',
-          flexDirection: 'column',
           gap: '6px',
+          alignItems: 'center',
+          backgroundColor: '#0a0a0a',
           flexShrink: 0
         }}
       >
-        <input
-          type="text"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          placeholder={
-            activeTab === 'nifty50'
-              ? 'Search 50 constituents (e.g. RELIANCE, TCS)...'
-              : 'Search indices (e.g. GIFT NIFTY, BANK)...'
-          }
-          style={{
-            width: '100%',
-            boxSizing: 'border-box',
-            backgroundColor: '#121212',
-            border: '1px solid #262626',
-            borderRadius: '3px',
-            color: '#ffffff',
-            fontSize: '0.72rem',
-            padding: '5px 8px',
-            outline: 'none'
-          }}
-        />
+        {/* Search Input */}
+        <div style={{ flex: 1, position: 'relative' }}>
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder={activeTab === 'nifty50' ? 'Filter stocks...' : 'Filter indices...'}
+            style={{
+              width: '100%',
+              backgroundColor: '#121212',
+              border: '1px solid #262626',
+              borderRadius: '3px',
+              padding: '4px 8px 4px 24px',
+              fontSize: '0.70rem',
+              color: '#ffffff',
+              outline: 'none'
+            }}
+          />
+          <svg
+            width="11"
+            height="11"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#737373"
+            strokeWidth="2.5"
+            style={{ position: 'absolute', left: '8px', top: '7px' }}
+          >
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+        </div>
 
-        {/* Sector dropdown when on Nifty 50 tab */}
+        {/* Sector Filter Dropdown for Tab 1 */}
         {activeTab === 'nifty50' && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.68rem' }}>
-            <span style={{ color: '#737373' }}>Filter Sector:</span>
-            <select
-              value={selectedSector}
-              onChange={(e) => setSelectedSector(e.target.value)}
-              style={{
-                backgroundColor: '#121212',
-                border: '1px solid #262626',
-                color: '#ffffff',
-                fontSize: '0.68rem',
-                padding: '3px 6px',
-                borderRadius: '3px',
-                outline: 'none',
-                cursor: 'pointer',
-                maxWidth: '180px'
-              }}
-            >
-              {ALL_SECTORS.map((sec) => (
-                <option key={sec} value={sec}>
-                  {sec}
-                </option>
-              ))}
-            </select>
-          </div>
+          <select
+            value={selectedSector}
+            onChange={(e) => setSelectedSector(e.target.value)}
+            style={{
+              backgroundColor: '#121212',
+              color: '#CCCCCC',
+              border: '1px solid #262626',
+              borderRadius: '3px',
+              padding: '4px 6px',
+              fontSize: '0.68rem',
+              outline: 'none',
+              cursor: 'pointer',
+              maxWidth: '120px'
+            }}
+          >
+            {ALL_SECTORS.map((sec) => (
+              <option key={sec} value={sec}>
+                {sec}
+              </option>
+            ))}
+          </select>
         )}
       </div>
 
-      {/* Content Area */}
-      <div style={{ flex: 1, overflowY: 'auto', backgroundColor: '#000000' }}>
+      {/* Main List Content */}
+      <div style={{ flex: 1, overflowY: 'auto' }}>
         {activeTab === 'nifty50' ? (
           /* TAB 1: NIFTY 50 CATEGORIZED BY SECTORS */
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <div>
             {Array.from(groupedNifty50.entries()).map(([sectorName, items]) => {
               const isCollapsed = collapsedSectors[sectorName];
+
               return (
                 <div key={sectorName} style={{ borderBottom: '1px solid #141414' }}>
-                  {/* Sector Header Accordion */}
+                  {/* Sector Header (Click to collapse/expand) */}
                   <div
                     onClick={() => toggleSector(sectorName)}
                     style={{
-                      padding: '6px 12px',
-                      backgroundColor: '#0a0a0a',
+                      padding: '5px 12px',
+                      backgroundColor: '#0d0d0d',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
                       cursor: 'pointer',
-                      userSelect: 'none',
-                      borderBottom: isCollapsed ? 'none' : '1px solid #171717'
+                      userSelect: 'none'
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ fontSize: '0.62rem', color: '#5F7A9A', transform: isCollapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.15s ease' }}>
+                      <span style={{ fontSize: '0.60rem', color: '#5F7A9A', transform: isCollapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.15s ease' }}>
                         ▼
                       </span>
                       <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#e5e7eb', letterSpacing: '0.02em' }}>
@@ -435,11 +448,14 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
                         const { ltp, change, changePct } = getItemLtp(item);
                         const isPositive = change >= 0;
                         const isSelected = activeSymbol === item.symbol;
+                        const isHighlighted = highlightSymbols.some((s) => s.toUpperCase() === item.symbol.toUpperCase());
 
                         return (
                           <div
                             key={item.symbol}
                             onClick={() => onSelectSymbol && onSelectSymbol(item.symbol)}
+                            onContextMenu={(e) => handleItemContextMenu(e, item)}
+                            title="Click to open chart · Right click for options"
                             style={{
                               padding: '7px 12px',
                               display: 'flex',
@@ -450,6 +466,12 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
                               cursor: 'pointer',
                               transition: 'background-color 0.12s ease'
                             }}
+                            onMouseEnter={(e) => {
+                              if (!isSelected) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.03)';
+                            }}
+                            onMouseLeave={(e) => {
+                              if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent';
+                            }}
                           >
                             <div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -459,6 +481,21 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
                                 {item.weight && (
                                   <span style={{ fontSize: '0.58rem', color: '#525252' }}>
                                     {item.weight.toFixed(1)}%
+                                  </span>
+                                )}
+                                {isHighlighted && (
+                                  <span
+                                    title="In Highlight Window"
+                                    style={{
+                                      fontSize: '0.56rem',
+                                      color: '#10b981',
+                                      backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                                      padding: '1px 4px',
+                                      borderRadius: '2px',
+                                      fontWeight: 700
+                                    }}
+                                  >
+                                    HL
                                   </span>
                                 )}
                               </div>
@@ -500,72 +537,35 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
             })}
           </div>
         ) : (
-          /* TAB 2: NIFTY INDICES (INCLUDING GIFT NIFTY) */
+          /* TAB 2: NIFTY INDICES */
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-            {/* GIFT NIFTY Session Status Banner */}
-            <div style={{
-              margin: '8px 12px 6px 12px',
-              padding: '8px 10px',
-              borderRadius: '4px',
-              backgroundColor: isGiftLive ? 'rgba(16, 185, 129, 0.08)' : 'rgba(255, 255, 255, 0.02)',
-              border: `1px solid ${isGiftLive ? 'rgba(16, 185, 129, 0.35)' : '#1f1f1f'}`,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{
-                  width: '8px',
-                  height: '8px',
-                  borderRadius: '50%',
-                  backgroundColor: isGiftLive ? '#10b981' : '#ef4444',
-                  boxShadow: isGiftLive ? '0 0 8px #10b981' : 'none'
-                }} />
-                <div>
-                  <div style={{ fontSize: '0.74rem', fontWeight: 700, color: isGiftLive ? '#10b981' : '#e5e7eb' }}>
-                    GIFT NIFTY (NSE IX)
-                  </div>
-                  <div style={{ fontSize: '0.62rem', color: '#9ca3af' }}>
-                    Session 1: 06:30–15:40 | Session 2: 16:35–02:45 IST
-                  </div>
-                </div>
-              </div>
-              <div style={{
-                fontSize: '0.64rem',
-                fontWeight: 700,
-                color: isGiftLive ? '#10b981' : '#ef4444',
-                padding: '2px 7px',
-                borderRadius: '3px',
-                backgroundColor: isGiftLive ? 'rgba(16, 185, 129, 0.18)' : 'rgba(239, 68, 68, 0.15)'
-              }}>
-                {isGiftLive ? 'LIVE' : 'CLOSED'}
-              </div>
-            </div>
-
             {filteredIndices.map((item) => {
               const { ltp, change, changePct } = getItemLtp(item);
               const isPositive = change >= 0;
               const isSelected = activeSymbol === item.symbol;
-              const isGift = item.isGiftNifty;
+              const isHighlighted = highlightSymbols.some((s) => s.toUpperCase() === item.symbol.toUpperCase());
 
               return (
                 <div
                   key={item.symbol}
                   onClick={() => onSelectSymbol && onSelectSymbol(item.symbol)}
+                  onContextMenu={(e) => handleItemContextMenu(e, item)}
+                  title="Click to open chart · Right click for options"
                   style={{
                     padding: '8px 12px',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    backgroundColor: isGift
-                      ? 'rgba(95, 122, 154, 0.08)'
-                      : isSelected
-                      ? 'rgba(95, 122, 154, 0.12)'
-                      : 'transparent',
+                    backgroundColor: isSelected ? 'rgba(95, 122, 154, 0.12)' : 'transparent',
                     borderBottom: '1px solid #141414',
-                    borderLeft: isGift ? '3px solid #5F7A9A' : 'none',
                     cursor: 'pointer',
                     transition: 'background-color 0.12s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isSelected) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.03)';
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent';
                   }}
                 >
                   <div>
@@ -573,42 +573,30 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
                       <span style={{ fontSize: '0.76rem', fontWeight: 700, color: '#ffffff' }}>
                         {item.symbol}
                       </span>
-                      {isGift ? (
+                      <span
+                        style={{
+                          fontSize: '0.58rem',
+                          color: '#5F7A9A',
+                          backgroundColor: 'rgba(95, 122, 154, 0.15)',
+                          padding: '1px 4px',
+                          borderRadius: '2px'
+                        }}
+                      >
+                        INDEX
+                      </span>
+                      {isHighlighted && (
                         <span
+                          title="In Highlight Window"
                           style={{
-                            fontSize: '0.60rem',
-                            fontWeight: 700,
-                            padding: '1px 5px',
-                            borderRadius: '2px',
-                            backgroundColor: isGiftLive ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.15)',
-                            color: isGiftLive ? '#10b981' : '#ef4444',
-                            border: `1px solid ${isGiftLive ? '#10b981' : '#ef4444'}`,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px'
-                          }}
-                        >
-                          <span
-                            style={{
-                              width: '4px',
-                              height: '4px',
-                              borderRadius: '50%',
-                              backgroundColor: isGiftLive ? '#10b981' : '#ef4444'
-                            }}
-                          />
-                          {giftNiftySession.label}
-                        </span>
-                      ) : (
-                        <span
-                          style={{
-                            fontSize: '0.58rem',
-                            color: '#5F7A9A',
-                            backgroundColor: 'rgba(95, 122, 154, 0.15)',
+                            fontSize: '0.56rem',
+                            color: '#10b981',
+                            backgroundColor: 'rgba(16, 185, 129, 0.15)',
                             padding: '1px 4px',
-                            borderRadius: '2px'
+                            borderRadius: '2px',
+                            fontWeight: 700
                           }}
                         >
-                          INDEX
+                          HL
                         </span>
                       )}
                     </div>
@@ -638,6 +626,114 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
         )}
       </div>
 
+      {/* Right-Click Context Menu */}
+      {contextMenu.visible && contextMenu.item && (
+        <div
+          style={{
+            position: 'fixed',
+            top: contextMenu.y,
+            left: contextMenu.x,
+            backgroundColor: '#0d0d0d',
+            border: '1px solid #262626',
+            borderRadius: '4px',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.95)',
+            padding: '4px 0',
+            zIndex: 90,
+            minWidth: '180px'
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header with symbol name */}
+          <div style={{ padding: '4px 12px', fontSize: '0.66rem', color: '#737373', borderBottom: '1px solid #1a1a1a', fontWeight: 700 }}>
+            {contextMenu.item.symbol}
+          </div>
+
+          {/* Option 1: Open Chart */}
+          <div
+            onClick={() => {
+              if (contextMenu.item) {
+                onSelectSymbol?.(contextMenu.item.symbol);
+              }
+              setContextMenu((prev) => ({ ...prev, visible: false }));
+            }}
+            style={{
+              padding: '6px 12px',
+              fontSize: '0.72rem',
+              color: '#ffffff',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(95, 122, 154, 0.2)')}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>
+              <polyline points="17 6 23 6 23 12"></polyline>
+            </svg>
+            <span>Open Chart</span>
+          </div>
+
+          {/* Option 2: Add to / Remove from Highlight Window */}
+          <div
+            onClick={() => {
+              if (contextMenu.item) {
+                onToggleHighlightSymbol?.(contextMenu.item.symbol);
+              }
+              setContextMenu((prev) => ({ ...prev, visible: false }));
+            }}
+            style={{
+              padding: '6px 12px',
+              fontSize: '0.72rem',
+              color: '#ffffff',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(95, 122, 154, 0.2)')}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+          >
+            <span style={{ fontSize: '0.80rem' }}>★</span>
+            <span>
+              {contextMenu.item && highlightSymbols.some((s) => s.toUpperCase() === contextMenu.item!.symbol.toUpperCase())
+                ? 'Remove from Highlight'
+                : 'Add to Highlight Window'}
+            </span>
+          </div>
+
+          <div style={{ height: '1px', backgroundColor: '#1a1a1a', margin: '4px 0' }} />
+
+          {/* Option 3: Copy Symbol Name */}
+          <div
+            onClick={() => {
+              if (contextMenu.item) {
+                navigator.clipboard.writeText(contextMenu.item.symbol);
+              }
+              setContextMenu((prev) => ({ ...prev, visible: false }));
+            }}
+            style={{
+              padding: '6px 12px',
+              fontSize: '0.72rem',
+              color: '#a3a3a3',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(95, 122, 154, 0.2)')}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+            <span>Copy Symbol</span>
+          </div>
+        </div>
+      )}
+
       {/* Footer Info */}
       <div
         style={{
@@ -655,9 +751,9 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
         <span>
           {activeTab === 'nifty50'
             ? `${filteredNifty50.length} stocks across 10 sectors`
-            : `${filteredIndices.length} indices | GIFT NIFTY active`}
+            : `${filteredIndices.length} indices`}
         </span>
-        <span style={{ color: '#5F7A9A' }}>PM Vision</span>
+        <span style={{ color: '#5F7A9A' }}>Right-click for options</span>
       </div>
     </div>
   );

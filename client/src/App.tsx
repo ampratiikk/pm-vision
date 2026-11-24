@@ -6,15 +6,12 @@ import {
   OptionRow,
   ExpiryOption,
   getMarketSessionInfo,
-  getGiftNiftySessionInfo,
-  isGiftNiftyMarketOpen,
   MarketSessionInfo
 } from '@pm-vision/shared';
 import { fetchHealth, fetchMarketHistory, fetchOptionChainByExpiry, fetchMarketStatus } from './services/api';
 import { createWebSocketConnection } from './services/websocket';
 import {
   CandlestickChart,
-  TradingViewChart,
   SAMPLE_CANDLESTICK_DATA,
   ChartImperativeHandle,
   CandlestickData,
@@ -68,7 +65,50 @@ export function App() {
 
   // Market session status (Markets Live / Markets Closed / Holiday / Pre / Post)
   const [sessionInfo, setSessionInfo] = useState<MarketSessionInfo>(getMarketSessionInfo);
-  const [giftSessionInfo, setGiftSessionInfo] = useState<MarketSessionInfo>(getGiftNiftySessionInfo);
+
+  // Highlight Window Custom Symbols (persisted across sessions)
+  const [highlightSymbols, setHighlightSymbols] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('pm_vision_highlight_symbols');
+      return saved ? JSON.parse(saved) : ['NIFTY 50', 'NIFTY FUT-I', 'BANK NIFTY', 'RELIANCE', 'HDFCBANK'];
+    } catch {
+      return ['NIFTY 50', 'NIFTY FUT-I', 'BANK NIFTY', 'RELIANCE', 'HDFCBANK'];
+    }
+  });
+
+  const handleAddHighlightSymbol = (symbol: string) => {
+    setHighlightSymbols((prev) => {
+      if (prev.some((s) => s.toUpperCase() === symbol.toUpperCase())) return prev;
+      const updated = [...prev, symbol];
+      try {
+        localStorage.setItem('pm_vision_highlight_symbols', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+  };
+
+  const handleRemoveHighlightSymbol = (symbol: string) => {
+    setHighlightSymbols((prev) => {
+      const updated = prev.filter((s) => s.toUpperCase() !== symbol.toUpperCase());
+      try {
+        localStorage.setItem('pm_vision_highlight_symbols', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+  };
+
+  const handleToggleHighlightSymbol = (symbol: string) => {
+    setHighlightSymbols((prev) => {
+      const exists = prev.some((s) => s.toUpperCase() === symbol.toUpperCase());
+      const updated = exists
+        ? prev.filter((s) => s.toUpperCase() !== symbol.toUpperCase())
+        : [...prev, symbol];
+      try {
+        localStorage.setItem('pm_vision_highlight_symbols', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+  };
 
   // Technical Indicators State
   const [indicators, setIndicators] = useState<IndicatorConfig[]>(() => {
@@ -175,10 +215,6 @@ export function App() {
   const topSectionRef = useRef<HTMLDivElement>(null);
 
   const loadHistory = useCallback(async (resolution: string, symbol: string = activeChartSymbol) => {
-    if (symbol === 'GIFT NIFTY') {
-      // TradingViewChart renders NSEIX:NIFTY1! with live exchange streaming directly
-      return;
-    }
     setIsChartLoading(true);
     try {
       const candles = await fetchMarketHistory(resolution, symbol);
@@ -380,15 +416,11 @@ export function App() {
   useEffect(() => {
     const checkStatus = () => {
       setSessionInfo(getMarketSessionInfo());
-      setGiftSessionInfo(getGiftNiftySessionInfo());
       fetchMarketStatus()
         .then((res: any) => {
           setIsBrokerConnected(res.isBrokerConnected);
           if (res.session) {
             setSessionInfo(res.session);
-          }
-          if (res.giftSession) {
-            setGiftSessionInfo(res.giftSession);
           }
         })
         .catch(() => {});
@@ -434,12 +466,6 @@ export function App() {
                 chartRef.current.updateLastBarPrice(sec.ltp);
               } else if (activeChartSymbolRef.current === 'NIFTY 50' && data.spotPrice > 0) {
                 chartRef.current.updateLastBarPrice(data.spotPrice);
-              }
-            } else if (activeChartSymbolRef.current === 'GIFT NIFTY' && isGiftNiftyMarketOpen() && chartRef.current) {
-              // During active GIFT NIFTY sessions (e.g. Session 2 16:35-02:45 IST):
-              const sec = data.securities?.find((s) => s.symbol.toUpperCase() === 'GIFT NIFTY');
-              if (sec && sec.ltp > 0) {
-                chartRef.current.updateLastBarPrice(sec.ltp);
               }
             }
           }
@@ -552,7 +578,7 @@ export function App() {
           />
         </div>
 
-        {/* Header Right: Market Status & GIFT NIFTY Live Session */}
+        {/* Header Right: Market Status */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
           {/* Domestic Market Status */}
           <div style={{
@@ -575,51 +601,6 @@ export function App() {
               boxShadow: sessionInfo.status === 'LIVE' ? `0 0 6px ${sessionInfo.dotColor}` : 'none'
             }} />
             <span>NSE: {sessionInfo.label}</span>
-          </div>
-
-          {/* GIFT NIFTY Live Session Indicator */}
-          <div
-            onClick={() => {
-              handleSelectSymbol('GIFT NIFTY', 'GIFT Nifty 50 Futures (NSE IX)', 'INDEX', 25544.65);
-            }}
-            title="GIFT NIFTY (NSE IX) - Click to view chart"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              fontSize: '0.72rem',
-              color: giftSessionInfo.status === 'LIVE' ? '#10b981' : '#737373',
-              fontWeight: 600,
-              padding: '3px 9px',
-              borderRadius: '4px',
-              backgroundColor: giftSessionInfo.status === 'LIVE' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255, 255, 255, 0.02)',
-              border: `1px solid ${giftSessionInfo.status === 'LIVE' ? 'rgba(16, 185, 129, 0.4)' : '#1f1f1f'}`,
-              cursor: 'pointer',
-              transition: 'all 0.15s ease'
-            }}
-            onMouseEnter={(e) => {
-              if (giftSessionInfo.status === 'LIVE') {
-                e.currentTarget.style.backgroundColor = 'rgba(16, 185, 129, 0.2)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (giftSessionInfo.status === 'LIVE') {
-                e.currentTarget.style.backgroundColor = 'rgba(16, 185, 129, 0.12)';
-              }
-            }}
-          >
-            <span style={{
-              width: '7px',
-              height: '7px',
-              borderRadius: '50%',
-              backgroundColor: giftSessionInfo.dotColor,
-              boxShadow: giftSessionInfo.status === 'LIVE' ? '0 0 8px #10b981' : 'none'
-            }} />
-            <span>
-              {giftSessionInfo.status === 'LIVE'
-                ? `GIFT NIFTY · ${giftSessionInfo.label.replace('GIFT Live', 'LIVE')}`
-                : 'GIFT NIFTY: Closed'}
-            </span>
           </div>
         </div>
       </header>
@@ -713,31 +694,6 @@ export function App() {
                     }}>
                       {activeChartSymbolSector}
                     </span>
-                    {activeChartSymbol === 'GIFT NIFTY' && (
-                      <span style={{
-                        fontSize: '0.62rem',
-                        fontWeight: 700,
-                        color: giftSessionInfo.status === 'LIVE' ? '#10b981' : '#ef4444',
-                        backgroundColor: giftSessionInfo.status === 'LIVE' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.12)',
-                        border: `1px solid ${giftSessionInfo.status === 'LIVE' ? 'rgba(16, 185, 129, 0.45)' : 'rgba(239, 68, 68, 0.3)'}`,
-                        padding: '1px 6px',
-                        borderRadius: '2px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px'
-                      }}>
-                        <span style={{
-                          width: '5px',
-                          height: '5px',
-                          borderRadius: '50%',
-                          backgroundColor: giftSessionInfo.status === 'LIVE' ? '#10b981' : '#ef4444',
-                          boxShadow: giftSessionInfo.status === 'LIVE' ? '0 0 6px #10b981' : 'none'
-                        }} />
-                        {giftSessionInfo.status === 'LIVE'
-                          ? giftSessionInfo.label.replace('GIFT Live', 'LIVE').toUpperCase()
-                          : 'SESSION CLOSED'}
-                      </span>
-                    )}
                   </div>
 
                   {/* Pinned Timeframe Buttons */}
@@ -923,97 +879,71 @@ export function App() {
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  {activeChartSymbol === 'GIFT NIFTY' ? (
-                    <span style={{
-                      fontSize: '0.64rem',
-                      fontWeight: 700,
-                      color: '#10b981',
-                      backgroundColor: 'rgba(16, 185, 129, 0.12)',
-                      border: '1px solid rgba(16, 185, 129, 0.35)',
+                  {/* Indicators Button */}
+                  <button
+                    onClick={() => setIsIndicatorsOpen(true)}
+                    title="Add or manage technical indicators (OR 1H, VWAP, EMA, SMA, Volume)"
+                    style={{
                       padding: '2px 8px',
+                      fontSize: '0.70rem',
+                      backgroundColor: indicators.some((ind) => ind.enabled) ? 'rgba(95, 122, 154, 0.2)' : '#121212',
+                      border: `1px solid ${indicators.some((ind) => ind.enabled) ? '#5F7A9A' : '#262626'}`,
+                      color: indicators.some((ind) => ind.enabled) ? '#5F7A9A' : '#e5e7eb',
                       borderRadius: '3px',
+                      cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '5px'
-                    }}>
-                      <span style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: '#10b981', boxShadow: '0 0 6px #10b981' }} />
-                      NSE IX LIVE STREAM
-                    </span>
-                  ) : (
-                    /* Indicators Button */
-                    <button
-                      onClick={() => setIsIndicatorsOpen(true)}
-                      title="Add or manage technical indicators (OR 1H, VWAP, EMA, SMA, Volume)"
-                      style={{
-                        padding: '2px 8px',
-                        fontSize: '0.70rem',
-                        backgroundColor: indicators.some((ind) => ind.enabled) ? 'rgba(95, 122, 154, 0.2)' : '#121212',
-                        border: `1px solid ${indicators.some((ind) => ind.enabled) ? '#5F7A9A' : '#262626'}`,
-                        color: indicators.some((ind) => ind.enabled) ? '#5F7A9A' : '#e5e7eb',
-                        borderRadius: '3px',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        fontWeight: 600
-                      }}
-                    >
-                      <span style={{ fontStyle: 'italic', fontFamily: 'serif', color: '#5F7A9A' }}>fx</span>
-                      <span>Indicators</span>
-                      {indicators.filter((ind) => ind.enabled).length > 0 && (
-                        <span
-                          style={{
-                            fontSize: '0.58rem',
-                            backgroundColor: '#5F7A9A',
-                            color: '#ffffff',
-                            borderRadius: '50%',
-                            width: '13px',
-                            height: '13px',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                          }}
-                        >
-                          {indicators.filter((ind) => ind.enabled).length}
-                        </span>
-                      )}
-                    </button>
-                  )}
+                      gap: '4px',
+                      fontWeight: 600
+                    }}
+                  >
+                    <span style={{ fontStyle: 'italic', fontFamily: 'serif', color: '#5F7A9A' }}>fx</span>
+                    <span>Indicators</span>
+                    {indicators.filter((ind) => ind.enabled).length > 0 && (
+                      <span
+                        style={{
+                          fontSize: '0.58rem',
+                          backgroundColor: '#5F7A9A',
+                          color: '#ffffff',
+                          borderRadius: '50%',
+                          width: '13px',
+                          height: '13px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                      >
+                        {indicators.filter((ind) => ind.enabled).length}
+                      </span>
+                    )}
+                  </button>
                 </div>
               </div>
 
-              {/* Main Visual Display: Candlestick Chart (Live TradingView NSE IX for GIFT NIFTY, Lightweight Chart for Domestic) */}
+              {/* Main Visual Display: Candlestick Chart */}
               <div
                 onContextMenu={handleChartContextMenu}
                 style={{ flex: 1, position: 'relative', minHeight: 0 }}
               >
-                {activeChartSymbol === 'GIFT NIFTY' ? (
-                  <TradingViewChart
-                    symbol="NSEIX:NIFTY1!"
-                    interval={activeTimeFilter}
-                    height="100%"
-                  />
-                ) : (
-                  <CandlestickChart
-                    ref={chartRef}
-                    data={chartCandles}
-                    indicators={indicators}
-                    height="100%"
-                    style={{ height: '100%' }}
-                    onOpenIndicatorSettings={(id) => {
-                      setSelectedIndicatorId(id || null);
-                      setIsIndicatorsOpen(true);
-                    }}
-                    seriesOptions={{
-                      upColor: candleColors.upBodyColor,
-                      downColor: candleColors.downBodyColor,
-                      borderUpColor: candleColors.upBorderColor,
-                      borderDownColor: candleColors.downBorderColor,
-                      wickUpColor: candleColors.upWickColor,
-                      wickDownColor: candleColors.downWickColor
-                    }}
-                  />
-                )}
+                <CandlestickChart
+                  ref={chartRef}
+                  data={chartCandles}
+                  indicators={indicators}
+                  height="100%"
+                  style={{ height: '100%' }}
+                  onOpenIndicatorSettings={(id) => {
+                    setSelectedIndicatorId(id || null);
+                    setIsIndicatorsOpen(true);
+                  }}
+                  seriesOptions={{
+                    upColor: candleColors.upBodyColor,
+                    downColor: candleColors.downBodyColor,
+                    borderUpColor: candleColors.upBorderColor,
+                    borderDownColor: candleColors.downBorderColor,
+                    wickUpColor: candleColors.upWickColor,
+                    wickDownColor: candleColors.downWickColor
+                  }}
+                />
 
                 {/* Direct Keyboard Interval Jump Overlay (TradingView style) */}
                 {keyIntervalVisible && (
@@ -1108,6 +1038,8 @@ export function App() {
                       onClose={() => setIsWatchlistOpen(false)}
                       securities={securities}
                       activeSymbol={activeChartSymbol}
+                      highlightSymbols={highlightSymbols}
+                      onToggleHighlightSymbol={handleToggleHighlightSymbol}
                       onSelectSymbol={(sym) => {
                         const found = [...NIFTY_50_CONSTITUENTS, ...NIFTY_INDICES].find((i) => i.symbol === sym);
                         if (found) {
@@ -1136,7 +1068,24 @@ export function App() {
                           minHeight: '80px',
                           overflow: 'hidden'
                         }}>
-                          <HighlightWindow securities={securities} style={{ height: '100%' }} />
+                          <HighlightWindow
+                            securities={securities}
+                            customSymbols={highlightSymbols}
+                            onAddSymbol={handleAddHighlightSymbol}
+                            onRemoveSymbol={handleRemoveHighlightSymbol}
+                            onSelectSymbol={(sym) => {
+                              const found = [...NIFTY_50_CONSTITUENTS, ...NIFTY_INDICES].find(
+                                (i) => i.symbol.toUpperCase() === sym.toUpperCase()
+                              );
+                              if (found) {
+                                handleSelectSymbol(found.symbol, found.name, found.sector || (found.isIndex ? 'INDEX' : 'Stock'), found.basePrice);
+                              } else {
+                                handleSelectSymbol(sym, sym, 'FUTURES', spotPrice);
+                              }
+                            }}
+                            activeChartSymbol={activeChartSymbol}
+                            style={{ height: '100%' }}
+                          />
                         </div>
 
                         {/* ↕ SUB-VERTICAL RESIZER */}
@@ -1251,6 +1200,8 @@ export function App() {
               onClose={() => setIsWatchlistOpen(false)}
               securities={securities}
               activeSymbol={activeChartSymbol}
+              highlightSymbols={highlightSymbols}
+              onToggleHighlightSymbol={handleToggleHighlightSymbol}
               onSelectSymbol={(sym) => {
                 const found = [...NIFTY_50_CONSTITUENTS, ...NIFTY_INDICES].find((i) => i.symbol === sym);
                 if (found) {

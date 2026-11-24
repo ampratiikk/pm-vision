@@ -323,14 +323,14 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
         try {
           if (ind.type === 'OR') {
             const dur = ind.options.durationMinutes || 60;
-            const showMid = ind.options.showMid !== false;
+            const showMid = ind.options.showMid === true;
             const orData = computeOpeningRangeBreakout(candles, dur, showMid);
 
             if (orData.highPoints.length > 0) {
               const highSeries = chart.addSeries(LineSeries, {
                 color: ind.options.highColor || ind.color || '#38bdf8',
-                lineWidth: (ind.lineWidth || 1) as 1 | 2 | 3 | 4,
-                lineStyle: LineStyle.Dashed,
+                lineWidth: (ind.lineWidth || 2) as 1 | 2 | 3 | 4,
+                lineStyle: LineStyle.Solid,
                 priceLineVisible: false,
                 lastValueVisible: true,
                 crosshairMarkerVisible: false,
@@ -341,8 +341,8 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
 
               const lowSeries = chart.addSeries(LineSeries, {
                 color: ind.options.lowColor || ind.color || '#38bdf8',
-                lineWidth: (ind.lineWidth || 1) as 1 | 2 | 3 | 4,
-                lineStyle: LineStyle.Dashed,
+                lineWidth: (ind.lineWidth || 2) as 1 | 2 | 3 | 4,
+                lineStyle: LineStyle.Solid,
                 priceLineVisible: false,
                 lastValueVisible: true,
                 crosshairMarkerVisible: false,

@@ -206,7 +206,6 @@ export class FyersBrokerProvider implements IBrokerProvider {
     if (s === 'NIFTY MIDCAP 50') return 'NSE:NIFTYMIDCAP50-INDEX';
     if (s === 'NIFTY NEXT 50') return 'NSE:NIFTYNEXT50-INDEX';
     if (s === 'INDIA VIX') return 'NSE:INDIAVIX-INDEX';
-    if (s === 'GIFT NIFTY' || s === 'GIFT') return 'NSE:NIFTY50-INDEX';
     // For all equities:
     return `NSE:${s}-EQ`;
   }

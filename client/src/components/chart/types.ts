@@ -152,12 +152,12 @@ export const DEFAULT_INDICATORS: IndicatorConfig[] = [
     enabled: false,
     visible: true,
     color: '#38bdf8', // Sky blue default
-    lineWidth: 1,
+    lineWidth: 2,
     options: {
       durationMinutes: 60,
       highColor: '#38bdf8', // Sky blue
       lowColor: '#38bdf8',  // Sky blue
-      showMid: true,
+      showMid: false,
       midColor: 'rgba(56, 189, 248, 0.45)'
     }
   },

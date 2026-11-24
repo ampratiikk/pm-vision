@@ -9,7 +9,6 @@ export interface WatchlistItem {
   high: number;
   low: number;
   isIndex?: boolean;
-  isGiftNifty?: boolean;
 }
 
 export const NIFTY_50_CONSTITUENTS: WatchlistItem[] = [
@@ -585,17 +584,6 @@ export const NIFTY_50_CONSTITUENTS: WatchlistItem[] = [
 ];
 
 export const NIFTY_INDICES: WatchlistItem[] = [
-  {
-    symbol: 'GIFT NIFTY',
-    name: 'GIFT Nifty 50 Futures (NSE IX)',
-    basePrice: 25544.65,
-    change: 195.00,
-    changePct: 0.77,
-    high: 25620.00,
-    low: 25480.00,
-    isIndex: true,
-    isGiftNifty: true
-  },
   {
     symbol: 'NIFTY 50',
     name: 'Nifty 50 Index (NSE Benchmark)',

@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { marketEngine } from '../services/marketEngine.js';
-import { isIndianMarketOpen, getMarketSessionInfo, getGiftNiftySessionInfo, isGiftNiftyMarketOpen } from '@pm-vision/shared';
+import { isIndianMarketOpen, getMarketSessionInfo } from '@pm-vision/shared';
 import { FyersAutoLoginService } from '../services/broker/FyersAutoLoginService.js';
 
 export const marketRouter = Router();
@@ -45,13 +45,10 @@ marketRouter.get('/option-chain', async (req: Request, res: Response) => {
 // GET /api/market/status
 marketRouter.get('/status', (_req: Request, res: Response) => {
   const session = getMarketSessionInfo();
-  const giftSession = getGiftNiftySessionInfo();
   res.json({
     status: 'ok',
     marketStatus: isIndianMarketOpen() ? 'OPEN' : 'CLOSED',
     session,
-    giftSession,
-    isGiftNiftyOpen: isGiftNiftyMarketOpen(),
     isBrokerConnected: marketEngine.isBrokerConnected(),
     timestamp: new Date().toISOString()
   });

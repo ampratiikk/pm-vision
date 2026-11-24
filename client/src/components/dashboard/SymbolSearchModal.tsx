@@ -170,7 +170,7 @@ export const SymbolSearchModal: React.FC<SymbolSearchModalProps> = ({
           {[
             { id: 'all', label: 'All' },
             { id: 'stocks', label: 'Nifty 50 Stocks' },
-            { id: 'indices', label: 'Indices & GIFT' }
+            { id: 'indices', label: 'Indices' }
           ].map((cat) => (
             <button
               key={cat.id}
@@ -251,20 +251,7 @@ export const SymbolSearchModal: React.FC<SymbolSearchModalProps> = ({
                             {item.sector}
                           </span>
                         )}
-                        {item.isGiftNifty && (
-                          <span
-                            style={{
-                              fontSize: '0.60rem',
-                              fontWeight: 700,
-                              color: '#10b981',
-                              backgroundColor: 'rgba(16, 185, 129, 0.15)',
-                              padding: '1px 5px',
-                              borderRadius: '2px'
-                            }}
-                          >
-                            NSE IX
-                          </span>
-                        )}
+
                       </div>
                       <span style={{ fontSize: '0.66rem', color: '#737373', marginTop: '1px' }}>
                         {item.name}

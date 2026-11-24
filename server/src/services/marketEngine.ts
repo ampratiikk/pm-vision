@@ -5,8 +5,7 @@ import {
   OptionRow,
   ChartCandleTick,
   ExpiryOption,
-  MarketStatus,
-  isGiftNiftyMarketOpen
+  MarketStatus
 } from '@pm-vision/shared';
 import { FyersBrokerProvider, isIndianMarketOpen } from './broker/FyersBrokerProvider.js';
 
@@ -28,7 +27,6 @@ export class MarketEngine {
   private fut1Spread: number = 180.35;
   private fut2Spread: number = 275.40;
   private fut3Spread: number = 380.20;
-  private giftSpread: number = 195.00;
 
   // Real option chain cache
   private cachedOptionChain: OptionRow[] | null = null;
@@ -139,18 +137,9 @@ export class MarketEngine {
     if (this.timer) return;
 
     this.timer = setInterval(async () => {
-      // Sync and broadcast during open Indian market hours or during active GIFT NIFTY sessions
-      if (isIndianMarketOpen() || isGiftNiftyMarketOpen()) {
-        if (!isIndianMarketOpen() && isGiftNiftyMarketOpen()) {
-          // GIFT NIFTY is actively trading in Session 1 or Session 2 while domestic cash market is closed
-          // Apply realistic micro-spread movement (between 185 and 210 pts)
-          const delta = (Math.random() - 0.49) * 1.5;
-          this.giftSpread = parseFloat(Math.max(185, Math.min(210, this.giftSpread + delta)).toFixed(2));
-          const payload = this.buildPayload();
-          this.notifyListeners(payload);
-        } else {
-          await this.syncWithBroker();
-        }
+      // ONLY sync and broadcast during genuine open market hours
+      if (isIndianMarketOpen()) {
+        await this.syncWithBroker();
       }
     }, 2500);
 
@@ -183,7 +172,6 @@ export class MarketEngine {
     const fut1 = parseFloat((spot + this.fut1Spread).toFixed(2));
     const fut2 = parseFloat((spot + this.fut2Spread).toFixed(2));
     const fut3 = parseFloat((spot + this.fut3Spread).toFixed(2));
-    const gift = parseFloat((spot + this.giftSpread).toFixed(2));
 
     const spotChange = parseFloat((spot - this.spotPrevClose).toFixed(2));
     const spotChangePct = parseFloat(((spotChange / this.spotPrevClose) * 100).toFixed(2));
@@ -196,9 +184,6 @@ export class MarketEngine {
 
     const fut3Change = parseFloat((fut3 - (this.spotPrevClose + 375)).toFixed(2));
     const fut3ChangePct = parseFloat(((fut3Change / (this.spotPrevClose + 375)) * 100).toFixed(2));
-
-    const giftChange = parseFloat((gift - (this.spotPrevClose + 190)).toFixed(2));
-    const giftChangePct = parseFloat(((giftChange / (this.spotPrevClose + 190)) * 100).toFixed(2));
 
     const securities: SecurityQuote[] = [
       {
@@ -252,19 +237,6 @@ export class MarketEngine {
         open: parseFloat((fut3 - 30).toFixed(2)),
         vwap: parseFloat((fut3 - 5).toFixed(2)),
         volume: '240K'
-      },
-      {
-        id: 'gift-nifty-1',
-        name: 'Gift Nifty Fut #1',
-        symbol: 'GIFT NIFTY',
-        ltp: gift,
-        change: giftChange,
-        changePct: giftChangePct,
-        high: parseFloat((gift + 30).toFixed(2)),
-        low: parseFloat((gift - 40).toFixed(2)),
-        open: parseFloat((gift - 20).toFixed(2)),
-        vwap: parseFloat((gift - 2).toFixed(2)),
-        volume: '5.8M'
       }
     ];
 
@@ -283,10 +255,6 @@ export class MarketEngine {
     const s4Pts = parseFloat((fut3 - fut1).toFixed(2));
     const s4Pct = parseFloat(((s4Pts / fut1) * 100).toFixed(2));
     const s4Yield = parseFloat(((s4Pct / 60) * 365).toFixed(2));
-
-    const s5Pts = parseFloat((gift - spot).toFixed(2));
-    const s5Pct = parseFloat(((s5Pts / spot) * 100).toFixed(2));
-    const s5Yield = parseFloat(((s5Pct / 17) * 365).toFixed(2));
 
     const basisSpreads: BasisSpreadPair[] = [
       {
@@ -333,17 +301,6 @@ export class MarketEngine {
         spread: s4Pts,
         spreadPct: s4Pct,
         annualizedYield: s4Yield
-      },
-      {
-        id: 'nifty-gift',
-        name: 'Nifty ↔ Gift Nifty Fut #1',
-        leg1: 'NIFTY SPOT',
-        leg2: 'GIFT NIFTY #1',
-        price1: spot,
-        price2: gift,
-        spread: s5Pts,
-        spreadPct: s5Pct,
-        annualizedYield: s5Yield
       }
     ];
 
