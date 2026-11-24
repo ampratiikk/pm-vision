@@ -14,6 +14,7 @@ import { fetchHealth, fetchMarketHistory, fetchOptionChainByExpiry, fetchMarketS
 import { createWebSocketConnection } from './services/websocket';
 import {
   CandlestickChart,
+  TradingViewChart,
   SAMPLE_CANDLESTICK_DATA,
   ChartImperativeHandle,
   CandlestickData,
@@ -174,6 +175,10 @@ export function App() {
   const topSectionRef = useRef<HTMLDivElement>(null);
 
   const loadHistory = useCallback(async (resolution: string, symbol: string = activeChartSymbol) => {
+    if (symbol === 'GIFT NIFTY') {
+      // TradingViewChart renders NSEIX:NIFTY1! with live exchange streaming directly
+      return;
+    }
     setIsChartLoading(true);
     try {
       const candles = await fetchMarketHistory(resolution, symbol);
@@ -918,71 +923,97 @@ export function App() {
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  {/* Indicators Button */}
-                  <button
-                    onClick={() => setIsIndicatorsOpen(true)}
-                    title="Add or manage technical indicators (OR 1H, VWAP, EMA, SMA, Volume)"
-                    style={{
+                  {activeChartSymbol === 'GIFT NIFTY' ? (
+                    <span style={{
+                      fontSize: '0.64rem',
+                      fontWeight: 700,
+                      color: '#10b981',
+                      backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                      border: '1px solid rgba(16, 185, 129, 0.35)',
                       padding: '2px 8px',
-                      fontSize: '0.70rem',
-                      backgroundColor: indicators.some((ind) => ind.enabled) ? 'rgba(95, 122, 154, 0.2)' : '#121212',
-                      border: `1px solid ${indicators.some((ind) => ind.enabled) ? '#5F7A9A' : '#262626'}`,
-                      color: indicators.some((ind) => ind.enabled) ? '#5F7A9A' : '#e5e7eb',
                       borderRadius: '3px',
-                      cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '4px',
-                      fontWeight: 600
-                    }}
-                  >
-                    <span style={{ fontStyle: 'italic', fontFamily: 'serif', color: '#5F7A9A' }}>fx</span>
-                    <span>Indicators</span>
-                    {indicators.filter((ind) => ind.enabled).length > 0 && (
-                      <span
-                        style={{
-                          fontSize: '0.58rem',
-                          backgroundColor: '#5F7A9A',
-                          color: '#ffffff',
-                          borderRadius: '50%',
-                          width: '13px',
-                          height: '13px',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center'
-                        }}
-                      >
-                        {indicators.filter((ind) => ind.enabled).length}
-                      </span>
-                    )}
-                  </button>
+                      gap: '5px'
+                    }}>
+                      <span style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: '#10b981', boxShadow: '0 0 6px #10b981' }} />
+                      NSE IX LIVE STREAM
+                    </span>
+                  ) : (
+                    /* Indicators Button */
+                    <button
+                      onClick={() => setIsIndicatorsOpen(true)}
+                      title="Add or manage technical indicators (OR 1H, VWAP, EMA, SMA, Volume)"
+                      style={{
+                        padding: '2px 8px',
+                        fontSize: '0.70rem',
+                        backgroundColor: indicators.some((ind) => ind.enabled) ? 'rgba(95, 122, 154, 0.2)' : '#121212',
+                        border: `1px solid ${indicators.some((ind) => ind.enabled) ? '#5F7A9A' : '#262626'}`,
+                        color: indicators.some((ind) => ind.enabled) ? '#5F7A9A' : '#e5e7eb',
+                        borderRadius: '3px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        fontWeight: 600
+                      }}
+                    >
+                      <span style={{ fontStyle: 'italic', fontFamily: 'serif', color: '#5F7A9A' }}>fx</span>
+                      <span>Indicators</span>
+                      {indicators.filter((ind) => ind.enabled).length > 0 && (
+                        <span
+                          style={{
+                            fontSize: '0.58rem',
+                            backgroundColor: '#5F7A9A',
+                            color: '#ffffff',
+                            borderRadius: '50%',
+                            width: '13px',
+                            height: '13px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}
+                        >
+                          {indicators.filter((ind) => ind.enabled).length}
+                        </span>
+                      )}
+                    </button>
+                  )}
                 </div>
               </div>
 
-              {/* Main Visual Display: Candlestick Chart */}
+              {/* Main Visual Display: Candlestick Chart (Live TradingView NSE IX for GIFT NIFTY, Lightweight Chart for Domestic) */}
               <div
                 onContextMenu={handleChartContextMenu}
                 style={{ flex: 1, position: 'relative', minHeight: 0 }}
               >
-                <CandlestickChart
-                  ref={chartRef}
-                  data={chartCandles}
-                  indicators={indicators}
-                  height="100%"
-                  style={{ height: '100%' }}
-                  onOpenIndicatorSettings={(id) => {
-                    setSelectedIndicatorId(id || null);
-                    setIsIndicatorsOpen(true);
-                  }}
-                  seriesOptions={{
-                    upColor: candleColors.upBodyColor,
-                    downColor: candleColors.downBodyColor,
-                    borderUpColor: candleColors.upBorderColor,
-                    borderDownColor: candleColors.downBorderColor,
-                    wickUpColor: candleColors.upWickColor,
-                    wickDownColor: candleColors.downWickColor
-                  }}
-                />
+                {activeChartSymbol === 'GIFT NIFTY' ? (
+                  <TradingViewChart
+                    symbol="NSEIX:NIFTY1!"
+                    interval={activeTimeFilter}
+                    height="100%"
+                  />
+                ) : (
+                  <CandlestickChart
+                    ref={chartRef}
+                    data={chartCandles}
+                    indicators={indicators}
+                    height="100%"
+                    style={{ height: '100%' }}
+                    onOpenIndicatorSettings={(id) => {
+                      setSelectedIndicatorId(id || null);
+                      setIsIndicatorsOpen(true);
+                    }}
+                    seriesOptions={{
+                      upColor: candleColors.upBodyColor,
+                      downColor: candleColors.downBodyColor,
+                      borderUpColor: candleColors.upBorderColor,
+                      borderDownColor: candleColors.downBorderColor,
+                      wickUpColor: candleColors.upWickColor,
+                      wickDownColor: candleColors.downWickColor
+                    }}
+                  />
+                )}
 
                 {/* Direct Keyboard Interval Jump Overlay (TradingView style) */}
                 {keyIntervalVisible && (
