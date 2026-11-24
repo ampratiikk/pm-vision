@@ -36,7 +36,7 @@ export class MarketEngine {
 
   // Active Candle
   private activeCandle: ChartCandleTick = {
-    time: '2026-02-27',
+    time: Math.floor(Date.now() / 1000),
     open: 25929.15,
     high: 25992.60,
     low: 25343.85,
@@ -75,7 +75,7 @@ export class MarketEngine {
         this.spotLow = nifty.low || nifty.ltp;
         this.spotPrevClose = parseFloat((nifty.ltp - nifty.change).toFixed(2));
         this.activeCandle = {
-          time: '2026-02-27',
+          time: Math.floor(Date.now() / 1000),
           open: this.spotOpen,
           high: this.spotHigh,
           low: this.spotLow,

@@ -658,16 +658,16 @@ export const OptionChainWidget: React.FC<OptionChainWidgetProps> = ({
                     let val: string | number = '';
                     let isBold = false;
                     if (col.key === 'ltp') {
-                      val = row.call.ltp.toFixed(2);
+                      val = (row.call?.ltp ?? 0).toFixed(2);
                       isBold = true;
                     } else if (col.key === 'oi') {
-                      val = `${(row.call.oi / 1000).toFixed(0)}k`;
+                      val = `${((row.call?.oi ?? 0) / 1000).toFixed(0)}k`;
                     } else if (col.key === 'delta') {
-                      val = row.call.delta.toFixed(2);
+                      val = (row.call?.delta ?? 0).toFixed(2);
                     } else if (col.key === 'gamma') {
-                      val = row.call.gamma.toFixed(4);
+                      val = (row.call?.gamma ?? 0).toFixed(4);
                     } else if (col.key === 'theta') {
-                      val = row.call.theta.toFixed(1);
+                      val = (row.call?.theta ?? 0).toFixed(1);
                     }
 
                     return (
@@ -729,16 +729,16 @@ export const OptionChainWidget: React.FC<OptionChainWidgetProps> = ({
                     let val: string | number = '';
                     let isBold = false;
                     if (col.key === 'ltp') {
-                      val = row.put.ltp.toFixed(2);
+                      val = (row.put?.ltp ?? 0).toFixed(2);
                       isBold = true;
                     } else if (col.key === 'oi') {
-                      val = `${(row.put.oi / 1000).toFixed(0)}k`;
+                      val = `${((row.put?.oi ?? 0) / 1000).toFixed(0)}k`;
                     } else if (col.key === 'delta') {
-                      val = row.put.delta.toFixed(2);
+                      val = (row.put?.delta ?? 0).toFixed(2);
                     } else if (col.key === 'gamma') {
-                      val = row.put.gamma.toFixed(4);
+                      val = (row.put?.gamma ?? 0).toFixed(4);
                     } else if (col.key === 'theta') {
-                      val = row.put.theta.toFixed(1);
+                      val = (row.put?.theta ?? 0).toFixed(1);
                     }
 
                     return (

@@ -24,9 +24,9 @@ export const HighlightWindow: React.FC<HighlightWindowProps> = ({
 }) => {
   const [selectedId, setSelectedId] = useState<string>('nifty-fut-1');
   const activeSecurities = securities && securities.length > 0 ? securities : DEFAULT_SECURITIES;
-  const current = activeSecurities.find((s) => s.id === selectedId) || activeSecurities[1];
+  const current = activeSecurities.find((s) => s.id === selectedId) || activeSecurities[0] || DEFAULT_SECURITIES[0];
   const spot = activeSecurities[0] || DEFAULT_SECURITIES[0];
-  const basisPts = (current.ltp - spot.ltp).toFixed(2);
+  const basisPts = ((current?.ltp ?? 0) - (spot?.ltp ?? 0)).toFixed(2);
 
   const handleSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const sec = activeSecurities.find((s) => s.id === e.target.value);
@@ -87,15 +87,15 @@ export const HighlightWindow: React.FC<HighlightWindowProps> = ({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
         <div>
           <span style={{ fontSize: '1.25rem', fontWeight: 700, fontFamily: 'monospace', color: '#ffffff' }}>
-            {current.ltp.toFixed(2)}
+            {current?.ltp !== undefined ? current.ltp.toFixed(2) : '—'}
           </span>
           <span style={{
             marginLeft: '0.5rem',
             fontSize: '0.78rem',
             fontFamily: 'monospace',
-            color: current.change >= 0 ? '#d1d5db' : '#9ca3af'
+            color: (current?.change ?? 0) >= 0 ? '#d1d5db' : '#9ca3af'
           }}>
-            {current.change >= 0 ? '+' : ''}{current.change.toFixed(2)} ({current.changePct >= 0 ? '+' : ''}{current.changePct.toFixed(2)}%)
+            {(current?.change ?? 0) >= 0 ? '+' : ''}{(current?.change ?? 0).toFixed(2)} ({(current?.changePct ?? 0) >= 0 ? '+' : ''}{(current?.changePct ?? 0).toFixed(2)}%)
           </span>
         </div>
         <div style={{ fontSize: '0.72rem', color: '#CCCCCC', textAlign: 'right' }}>

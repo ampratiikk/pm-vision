@@ -264,18 +264,9 @@ export class FyersBrokerProvider implements IBrokerProvider {
 
       return sorted.map((c: any[]) => {
         const epoch = c[0];
-        let timeVal: string | number = epoch;
-
-        if (fyersRes === 'D') {
-          // Format date as YYYY-MM-DD using IST (epoch in seconds)
-          const d = new Date((epoch + 19800) * 1000);
-          timeVal = d.toISOString().slice(0, 10);
-        } else {
-          // Intraday candles: FYERS delivers UTC epoch.
-          // Shift by +19800 seconds (UTC+05:30) so Lightweight Charts' UTC time scale
-          // renders the exact Indian Market session time (09:15 to 15:30 IST).
-          timeVal = epoch + 19800;
-        }
+        // Normalize all resolutions (daily & intraday) to UNIX timestamp in seconds (IST shifted)
+        // This ensures 100% type consistency across all chart resolutions in Lightweight Charts.
+        const timeVal = epoch + 19800;
 
         return {
           time: timeVal,
