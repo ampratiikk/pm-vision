@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { marketEngine } from '../services/marketEngine.js';
 import { isIndianMarketOpen, getMarketSessionInfo } from '@pm-vision/shared';
+import { FyersAutoLoginService } from '../services/broker/FyersAutoLoginService.js';
 
 export const marketRouter = Router();
 
@@ -80,6 +81,45 @@ marketRouter.post('/broker-token', async (req: Request, res: Response) => {
       status: 'error',
       connected: false,
       message: err?.message || 'Failed to authenticate token.'
+    });
+  }
+});
+
+// POST /api/market/auto-login (Method 2: Headless TOTP Auto-Login)
+marketRouter.post('/auto-login', async (req: Request, res: Response) => {
+  const { fyId, pin, totpKey } = req.body || {};
+
+  if (pin) process.env.FYERS_PIN = pin;
+  if (totpKey) process.env.FYERS_TOTP_KEY = totpKey;
+  if (fyId) process.env.FYERS_USER_ID = fyId;
+
+  try {
+    const result = await FyersAutoLoginService.executeAutoLogin({
+      fyId,
+      pin,
+      totpKey
+    });
+
+    if (result.success && result.accessToken) {
+      const brokerRes = await marketEngine.updateBrokerToken(result.accessToken);
+      res.json({
+        status: 'ok',
+        connected: true,
+        message: 'Headless auto-login successful! Connected to FYERS.',
+        spotPrice: brokerRes.spotPrice
+      });
+    } else {
+      res.status(400).json({
+        status: 'error',
+        connected: false,
+        message: result.message
+      });
+    }
+  } catch (err: any) {
+    res.status(500).json({
+      status: 'error',
+      connected: false,
+      message: err?.message || 'Headless login failed'
     });
   }
 });

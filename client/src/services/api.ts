@@ -51,3 +51,21 @@ export async function updateBrokerToken(tokenOrAuthCode: string): Promise<{
   });
   return response.json();
 }
+
+export async function executeAutoLogin(credentials: {
+  fyId?: string;
+  pin: string;
+  totpKey: string;
+}): Promise<{
+  status: string;
+  connected: boolean;
+  message: string;
+  spotPrice?: number;
+}> {
+  const response = await fetch('/api/market/auto-login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(credentials)
+  });
+  return response.json();
+}
