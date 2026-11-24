@@ -418,23 +418,23 @@ export function App() {
             if (data.expiries && data.expiries.length > 0) setExpiries(data.expiries);
             if (data.selectedExpiry) setSelectedExpiry(data.selectedExpiry);
 
-            if ((data.marketStatus === 'OPEN' || isGiftNiftyMarketOpen()) && chartRef.current) {
-              if (activeChartSymbolRef.current === 'NIFTY 50' && data.latestCandle && data.marketStatus === 'OPEN') {
-                chartRef.current.updateCandle(data.latestCandle as any);
-              } else if (data.securities) {
-                const sec = data.securities.find(
-                  (s) => s.symbol.toUpperCase() === activeChartSymbolRef.current.toUpperCase()
-                );
-                if (sec && sec.ltp > 0) {
-                  const nowSec = Math.floor(Date.now() / 1000);
-                  chartRef.current.updateCandle({
-                    time: nowSec as any,
-                    open: sec.open > 0 ? sec.open : sec.ltp,
-                    high: sec.high > 0 ? sec.high : sec.ltp,
-                    low: sec.low > 0 ? sec.low : sec.ltp,
-                    close: sec.ltp
-                  });
-                }
+            // Real-time chart candle updates:
+            // 1. When Indian markets are closed, domestic symbols (NIFTY 50, stocks) MUST remain clean & static!
+            // 2. Only during genuine open market hours: update the current active candle in-place without creating extra bars!
+            if (data.marketStatus === 'OPEN' && chartRef.current) {
+              const sec = data.securities?.find(
+                (s) => s.symbol.toUpperCase() === activeChartSymbolRef.current.toUpperCase()
+              );
+              if (sec && sec.ltp > 0) {
+                chartRef.current.updateLastBarPrice(sec.ltp);
+              } else if (activeChartSymbolRef.current === 'NIFTY 50' && data.spotPrice > 0) {
+                chartRef.current.updateLastBarPrice(data.spotPrice);
+              }
+            } else if (activeChartSymbolRef.current === 'GIFT NIFTY' && isGiftNiftyMarketOpen() && chartRef.current) {
+              // During active GIFT NIFTY sessions (e.g. Session 2 16:35-02:45 IST):
+              const sec = data.securities?.find((s) => s.symbol.toUpperCase() === 'GIFT NIFTY');
+              if (sec && sec.ltp > 0) {
+                chartRef.current.updateLastBarPrice(sec.ltp);
               }
             }
           }
@@ -1300,41 +1300,6 @@ export function App() {
                 <rect x="10" y="5" width="4" height="12" fill="currentColor"></rect>
                 <line x1="18" y1="4" x2="18" y2="20"></line>
                 <rect x="16" y="8" width="4" height="7" fill="currentColor"></rect>
-              </svg>
-            </button>
-
-            {/* Reset Chart View Button */}
-            <button
-              onClick={() => {
-                chartRef.current?.fitContent();
-              }}
-              title="Reset Chart View (Fit to screen with spacing)"
-              style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '4px',
-                backgroundColor: 'transparent',
-                border: '1px solid transparent',
-                color: '#737373',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: 0,
-                transition: 'all 0.15s ease'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.color = '#5F7A9A';
-                e.currentTarget.style.backgroundColor = 'rgba(95, 122, 154, 0.15)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.color = '#737373';
-                e.currentTarget.style.backgroundColor = 'transparent';
-              }}
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="23 4 23 10 17 10"></polyline>
-                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
               </svg>
             </button>
 

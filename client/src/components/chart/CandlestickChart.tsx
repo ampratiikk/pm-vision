@@ -501,6 +501,27 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
             console.warn('[CandlestickChart] Error updating candle:', err);
           }
         },
+        updateLastBarPrice: (price: number) => {
+          try {
+            if (typeof price !== 'number' || isNaN(price) || price <= 0) return;
+            const list = currentDataRef.current;
+            if (!list || list.length === 0) return;
+            const lastBar = list[list.length - 1];
+            const updatedBar: CandlestickData<Time> = {
+              ...lastBar,
+              close: price,
+              high: Math.max(lastBar.high, price),
+              low: Math.min(lastBar.low, price)
+            };
+            list[list.length - 1] = updatedBar;
+            seriesRef.current?.update(updatedBar);
+            priceBoxRef.current?.update(price, price >= updatedBar.open);
+            setOhlcInfo(computeOHLCInfo(list, list.length - 1));
+            syncIndicators(list, indicators);
+          } catch (err) {
+            console.warn('[CandlestickChart] Error updating last bar price:', err);
+          }
+        },
         setData: (newData) => {
           try {
             const clean = sanitizeCandles(newData);
@@ -748,6 +769,22 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
             } else {
               list.push(candle);
             }
+            setOhlcInfo(computeOHLCInfo(list, list.length - 1));
+          },
+          updateLastBarPrice: (price: number) => {
+            if (typeof price !== 'number' || isNaN(price) || price <= 0) return;
+            const list = currentDataRef.current;
+            if (!list || list.length === 0) return;
+            const lastBar = list[list.length - 1];
+            const updatedBar = {
+              ...lastBar,
+              close: price,
+              high: Math.max(lastBar.high, price),
+              low: Math.min(lastBar.low, price)
+            };
+            list[list.length - 1] = updatedBar;
+            series.update(updatedBar);
+            priceBoxPrimitive.update(price, price >= updatedBar.open);
             setOhlcInfo(computeOHLCInfo(list, list.length - 1));
           },
           setData: (newData) => {

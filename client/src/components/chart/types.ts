@@ -35,6 +35,11 @@ export interface ChartImperativeHandle {
   updateCandle: (candle: CandlestickData<Time>) => void;
 
   /**
+   * Update the latest bar's close price (and adjust high/low if breached) in-place without creating extra bars.
+   */
+  updateLastBarPrice: (price: number) => void;
+
+  /**
    * Replace the full historical dataset.
    */
   setData: (data: CandlestickData<Time>[]) => void;
