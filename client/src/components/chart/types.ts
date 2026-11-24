@@ -77,6 +77,11 @@ export interface CandlestickChartProps {
   seriesOptions?: CandlestickSeriesPartialOptions;
 
   /**
+   * Active indicators list to plot on chart
+   */
+  indicators?: IndicatorConfig[];
+
+  /**
    * Height in pixels or percentage CSS string (e.g. "100%").
    */
   height?: number | string;
@@ -101,3 +106,96 @@ export interface CandlestickChartProps {
    */
   onContextMenu?: (e: React.MouseEvent) => void;
 }
+
+export type IndicatorType = 'OR' | 'VWAP' | 'EMA' | 'SMA' | 'VOLUME';
+
+export interface IndicatorConfig {
+  id: string;
+  type: IndicatorType;
+  name: string;
+  shortName: string;
+  enabled: boolean;
+  visible: boolean;
+  color: string;
+  lineWidth?: 1 | 2 | 3 | 4;
+  options: {
+    durationMinutes?: number; // OR opening duration (e.g. 60 for 1H)
+    highColor?: string;
+    lowColor?: string;
+    showMid?: boolean;
+    midColor?: string;
+    period?: number; // For EMA / SMA
+    colorUp?: string;
+    colorDown?: string;
+  };
+}
+
+export const DEFAULT_INDICATORS: IndicatorConfig[] = [
+  {
+    id: 'indicator-or-1h',
+    type: 'OR',
+    name: 'Opening Range Breakout',
+    shortName: 'OR 1H',
+    enabled: false,
+    visible: true,
+    color: '#38bdf8',
+    lineWidth: 1,
+    options: {
+      durationMinutes: 60,
+      highColor: '#38bdf8',
+      lowColor: '#f87171',
+      showMid: true,
+      midColor: '#94a3b8'
+    }
+  },
+  {
+    id: 'indicator-vwap',
+    type: 'VWAP',
+    name: 'Volume Weighted Average Price',
+    shortName: 'VWAP',
+    enabled: false,
+    visible: true,
+    color: '#f59e0b',
+    lineWidth: 1,
+    options: {}
+  },
+  {
+    id: 'indicator-ema-20',
+    type: 'EMA',
+    name: 'Exponential Moving Average',
+    shortName: 'EMA 20',
+    enabled: false,
+    visible: true,
+    color: '#a855f7',
+    lineWidth: 1,
+    options: {
+      period: 20
+    }
+  },
+  {
+    id: 'indicator-sma-50',
+    type: 'SMA',
+    name: 'Simple Moving Average',
+    shortName: 'SMA 50',
+    enabled: false,
+    visible: true,
+    color: '#10b981',
+    lineWidth: 1,
+    options: {
+      period: 50
+    }
+  },
+  {
+    id: 'indicator-volume',
+    type: 'VOLUME',
+    name: 'Volume Overlay',
+    shortName: 'VOL',
+    enabled: false,
+    visible: true,
+    color: '#5F7A9A',
+    options: {
+      colorUp: 'rgba(95, 122, 154, 0.4)',
+      colorDown: 'rgba(239, 68, 68, 0.4)'
+    }
+  }
+];

@@ -8,6 +8,8 @@ import {
 import {
   createChart,
   CandlestickSeries,
+  LineSeries,
+  HistogramSeries,
   ColorType,
   LineStyle,
   CrosshairMode,
@@ -21,7 +23,14 @@ import {
   CandlestickData,
   Time
 } from 'lightweight-charts';
-import { CandlestickChartProps, ChartImperativeHandle } from './types';
+import { CandlestickChartProps, ChartImperativeHandle, IndicatorConfig } from './types';
+import {
+  computeOpeningRangeBreakout,
+  computeVWAP,
+  computeEMA,
+  computeSMA,
+  computeVolumeSeries
+} from './indicators';
 
 /**
  * Format numerical prices with comma separation (Indian format)
@@ -250,6 +259,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
       data,
       chartOptions,
       seriesOptions,
+      indicators = [],
       height = 420,
       style,
       className,
@@ -262,6 +272,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
     const chartRef = useRef<IChartApi | null>(null);
     const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
     const priceBoxRef = useRef<PriceBoxPrimitive | null>(null);
+    const indicatorSeriesMapRef = useRef<Map<string, ISeriesApi<any>[]>>(new Map());
 
     // Keep data array in ref for fast lookup during crosshair moves
     const currentDataRef = useRef<CandlestickData<Time>[]>(data || []);
@@ -271,6 +282,153 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
       const list = data || [];
       return computeOHLCInfo(list, list.length - 1);
     });
+
+    const syncIndicators = (candles: CandlestickData<Time>[], activeList: IndicatorConfig[]) => {
+      const chart = chartRef.current;
+      if (!chart || !candles || candles.length === 0) return;
+
+      const seriesMap = indicatorSeriesMapRef.current;
+      const activeIds = new Set(activeList.filter((ind) => ind.enabled && ind.visible).map((ind) => ind.id));
+
+      // Remove inactive or disabled series
+      for (const [id, sList] of Array.from(seriesMap.entries())) {
+        if (!activeIds.has(id)) {
+          sList.forEach((s) => {
+            try {
+              chart.removeSeries(s);
+            } catch {}
+          });
+          seriesMap.delete(id);
+        }
+      }
+
+      // Add or update active series
+      for (const ind of activeList) {
+        if (!ind.enabled || !ind.visible) continue;
+
+        const existing = seriesMap.get(ind.id);
+        if (existing) {
+          existing.forEach((s) => {
+            try {
+              chart.removeSeries(s);
+            } catch {}
+          });
+          seriesMap.delete(ind.id);
+        }
+
+        const createdList: ISeriesApi<any>[] = [];
+
+        try {
+          if (ind.type === 'OR') {
+            const dur = ind.options.durationMinutes || 60;
+            const showMid = ind.options.showMid !== false;
+            const orData = computeOpeningRangeBreakout(candles, dur, showMid);
+
+            if (orData.highPoints.length > 0) {
+              const highSeries = chart.addSeries(LineSeries, {
+                color: ind.options.highColor || '#38bdf8',
+                lineWidth: 1,
+                lineStyle: LineStyle.Dashed,
+                priceLineVisible: false,
+                lastValueVisible: true,
+                title: `${dur >= 60 ? dur / 60 + 'H' : dur + 'm'} High`
+              });
+              highSeries.setData(orData.highPoints);
+              createdList.push(highSeries);
+
+              const lowSeries = chart.addSeries(LineSeries, {
+                color: ind.options.lowColor || '#f87171',
+                lineWidth: 1,
+                lineStyle: LineStyle.Dashed,
+                priceLineVisible: false,
+                lastValueVisible: true,
+                title: `${dur >= 60 ? dur / 60 + 'H' : dur + 'm'} Low`
+              });
+              lowSeries.setData(orData.lowPoints);
+              createdList.push(lowSeries);
+
+              if (showMid && orData.midPoints.length > 0) {
+                const midSeries = chart.addSeries(LineSeries, {
+                  color: ind.options.midColor || '#94a3b8',
+                  lineWidth: 1,
+                  lineStyle: LineStyle.Dotted,
+                  priceLineVisible: false,
+                  lastValueVisible: false,
+                  title: 'Mid'
+                });
+                midSeries.setData(orData.midPoints);
+                createdList.push(midSeries);
+              }
+            }
+          } else if (ind.type === 'VWAP') {
+            const vwapData = computeVWAP(candles);
+            if (vwapData.length > 0) {
+              const vSeries = chart.addSeries(LineSeries, {
+                color: ind.color || '#f59e0b',
+                lineWidth: (ind.lineWidth || 1) as 1 | 2 | 3 | 4,
+                priceLineVisible: false,
+                lastValueVisible: true,
+                title: 'VWAP'
+              });
+              vSeries.setData(vwapData);
+              createdList.push(vSeries);
+            }
+          } else if (ind.type === 'EMA') {
+            const period = ind.options.period || 20;
+            const emaData = computeEMA(candles, period);
+            if (emaData.length > 0) {
+              const eSeries = chart.addSeries(LineSeries, {
+                color: ind.color || '#a855f7',
+                lineWidth: (ind.lineWidth || 1) as 1 | 2 | 3 | 4,
+                priceLineVisible: false,
+                lastValueVisible: true,
+                title: `EMA ${period}`
+              });
+              eSeries.setData(emaData);
+              createdList.push(eSeries);
+            }
+          } else if (ind.type === 'SMA') {
+            const period = ind.options.period || 50;
+            const smaData = computeSMA(candles, period);
+            if (smaData.length > 0) {
+              const sSeries = chart.addSeries(LineSeries, {
+                color: ind.color || '#10b981',
+                lineWidth: (ind.lineWidth || 1) as 1 | 2 | 3 | 4,
+                priceLineVisible: false,
+                lastValueVisible: true,
+                title: `SMA ${period}`
+              });
+              sSeries.setData(smaData);
+              createdList.push(sSeries);
+            }
+          } else if (ind.type === 'VOLUME') {
+            const volData = computeVolumeSeries(candles, ind.options.colorUp, ind.options.colorDown);
+            if (volData.length > 0) {
+              const volSeries = chart.addSeries(HistogramSeries, {
+                priceFormat: { type: 'volume' },
+                priceScaleId: 'volume',
+                priceLineVisible: false,
+                lastValueVisible: false
+              });
+              chart.priceScale('volume').applyOptions({
+                scaleMargins: {
+                  top: 0.82,
+                  bottom: 0
+                }
+              });
+              volSeries.setData(volData);
+              createdList.push(volSeries);
+            }
+          }
+        } catch (e) {
+          console.warn(`[CandlestickChart] Error creating series for ${ind.id}:`, e);
+        }
+
+        if (createdList.length > 0) {
+          seriesMap.set(ind.id, createdList);
+        }
+      }
+    };
 
     // Expose imperative API for streaming real-time updates (FYERS WebSocket readiness)
     useImperativeHandle(
@@ -298,6 +456,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
               list.push(cleanCandle);
             }
             setOhlcInfo(computeOHLCInfo(list, list.length - 1));
+            syncIndicators(list, indicators);
           } catch (err) {
             console.warn('[CandlestickChart] Error updating candle:', err);
           }
@@ -317,6 +476,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
               priceBoxRef.current?.update(latest.close, latest.close >= latest.open);
             }
             setOhlcInfo(computeOHLCInfo(clean, clean.length - 1));
+            syncIndicators(clean, indicators);
             try {
               chartRef.current?.timeScale().fitContent();
             } catch {}
@@ -333,8 +493,13 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
         getChart: () => chartRef.current,
         getSeries: () => seriesRef.current
       }),
-      []
+      [indicators]
     );
+
+    // Sync indicators whenever indicators prop changes
+    useEffect(() => {
+      syncIndicators(currentDataRef.current, indicators);
+    }, [indicators]);
 
     useEffect(() => {
       const container = containerRef.current;
@@ -416,6 +581,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
       if (cleanInitial.length > 0) {
         series.setData(cleanInitial);
         currentDataRef.current = cleanInitial;
+        syncIndicators(cleanInitial, indicators);
       }
       chart.timeScale().fitContent();
 
@@ -548,6 +714,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
         resizeObserver.disconnect();
         container.removeEventListener('mouseleave', handleMouseLeave);
         chart.unsubscribeCrosshairMove(handleCrosshairMove);
+        indicatorSeriesMapRef.current.clear();
         chart.remove();
         chartRef.current = null;
         seriesRef.current = null;
@@ -572,6 +739,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
               priceBoxRef.current?.update(latest.close, latest.close >= latest.open);
             }
             setOhlcInfo(computeOHLCInfo(clean, clean.length - 1));
+            syncIndicators(clean, indicators);
             try {
               chartRef.current?.timeScale().fitContent();
             } catch {}
@@ -580,7 +748,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
       } catch (err) {
         console.error('Error updating chart series data:', err);
       }
-    }, [data]);
+    }, [data, indicators]);
 
     useEffect(() => {
       if (seriesRef.current && seriesOptions) {
@@ -661,6 +829,58 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
                 ({changeValSign}{ohlcInfo.changeVal.toFixed(2)})
               </span>
             </div>
+          </div>
+        )}
+
+        {/* Active Indicators Overlay Badges */}
+        {indicators && indicators.some((ind) => ind.enabled && ind.visible) && (
+          <div
+            style={{
+              position: 'absolute',
+              top: '36px',
+              left: '12px',
+              zIndex: 10,
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '6px',
+              fontFamily: 'Quicksand, sans-serif',
+              fontSize: '0.66rem',
+              userSelect: 'none'
+            }}
+          >
+            {indicators
+              .filter((ind) => ind.enabled && ind.visible)
+              .map((ind) => (
+                <div
+                  key={ind.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    backgroundColor: 'rgba(5, 5, 5, 0.85)',
+                    border: `1px solid ${ind.color || '#5F7A9A'}`,
+                    borderRadius: '3px',
+                    padding: '2px 7px',
+                    color: '#e5e7eb',
+                    backdropFilter: 'blur(4px)'
+                  }}
+                >
+                  <span
+                    style={{
+                      width: '6px',
+                      height: '6px',
+                      borderRadius: '50%',
+                      backgroundColor: ind.color || '#5F7A9A'
+                    }}
+                  />
+                  <span style={{ fontWeight: 600 }}>{ind.shortName}</span>
+                  {ind.type === 'OR' && (
+                    <span style={{ color: '#a3a3a3', fontSize: '0.60rem' }}>
+                      ({ind.options.durationMinutes || 60}m)
+                    </span>
+                  )}
+                </div>
+              ))}
           </div>
         )}
       </div>

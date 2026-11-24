@@ -17,13 +17,18 @@ import {
   CandlestickData,
   Time,
   CandleColorSettings,
-  DEFAULT_CANDLE_COLORS
+  DEFAULT_CANDLE_COLORS,
+  IndicatorConfig,
+  DEFAULT_INDICATORS
 } from './components/chart';
+import { IndicatorsModal } from './components/chart/IndicatorsModal';
 import {
   HighlightWindow,
   BasisSpreadWidget,
   OptionChainWidget,
-  NiftyHeatmap
+  NiftyHeatmap,
+  WatchlistDrawer,
+  WatchlistMode
 } from './components/dashboard';
 import { SettingsModal } from './components/dashboard/SettingsModal';
 import logoImg from './assets/logo.png';
@@ -57,6 +62,36 @@ export function App() {
 
   // Market session status (Markets Live / Markets Closed / Holiday / Pre / Post)
   const [sessionInfo, setSessionInfo] = useState<MarketSessionInfo>(getMarketSessionInfo);
+
+  // Technical Indicators State
+  const [indicators, setIndicators] = useState<IndicatorConfig[]>(() => {
+    try {
+      const saved = localStorage.getItem('pm_vision_indicators');
+      return saved ? JSON.parse(saved) : DEFAULT_INDICATORS;
+    } catch {
+      return DEFAULT_INDICATORS;
+    }
+  });
+  const [isIndicatorsOpen, setIsIndicatorsOpen] = useState<boolean>(false);
+
+  const handleUpdateIndicators = (newIndicators: IndicatorConfig[]) => {
+    setIndicators(newIndicators);
+    try {
+      localStorage.setItem('pm_vision_indicators', JSON.stringify(newIndicators));
+    } catch {}
+  };
+
+  const handleResetIndicators = () => {
+    setIndicators(DEFAULT_INDICATORS);
+    try {
+      localStorage.removeItem('pm_vision_indicators');
+    } catch {}
+  };
+
+  // Watchlist State (Overlay Slider, Docked, or Fullscreen)
+  const [isWatchlistOpen, setIsWatchlistOpen] = useState<boolean>(false);
+  const [watchlistMode, setWatchlistMode] = useState<WatchlistMode>('overlay');
+  const [activeWatchlistSymbol, setActiveWatchlistSymbol] = useState<string>('NIFTY 50');
 
   // Candlestick Appearance Customization
   const [candleColors, setCandleColors] = useState<CandleColorSettings>(() => {
@@ -692,20 +727,61 @@ export function App() {
                   )}
                 </div>
 
-                <button
-                  onClick={() => chartRef.current?.fitContent()}
-                  style={{
-                    padding: '2px 8px',
-                    fontSize: '0.70rem',
-                    backgroundColor: '#121212',
-                    border: '1px solid #262626',
-                    color: '#e5e7eb',
-                    borderRadius: '3px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Reset View
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {/* Indicators Button */}
+                  <button
+                    onClick={() => setIsIndicatorsOpen(true)}
+                    title="Add or manage technical indicators (OR 1H, VWAP, EMA, SMA, Volume)"
+                    style={{
+                      padding: '2px 8px',
+                      fontSize: '0.70rem',
+                      backgroundColor: indicators.some((ind) => ind.enabled) ? 'rgba(95, 122, 154, 0.2)' : '#121212',
+                      border: `1px solid ${indicators.some((ind) => ind.enabled) ? '#5F7A9A' : '#262626'}`,
+                      color: indicators.some((ind) => ind.enabled) ? '#5F7A9A' : '#e5e7eb',
+                      borderRadius: '3px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      fontWeight: 600
+                    }}
+                  >
+                    <span style={{ fontStyle: 'italic', fontFamily: 'serif', color: '#5F7A9A' }}>fx</span>
+                    <span>Indicators</span>
+                    {indicators.filter((ind) => ind.enabled).length > 0 && (
+                      <span
+                        style={{
+                          fontSize: '0.58rem',
+                          backgroundColor: '#5F7A9A',
+                          color: '#ffffff',
+                          borderRadius: '50%',
+                          width: '13px',
+                          height: '13px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                      >
+                        {indicators.filter((ind) => ind.enabled).length}
+                      </span>
+                    )}
+                  </button>
+
+                  <button
+                    onClick={() => chartRef.current?.fitContent()}
+                    style={{
+                      padding: '2px 8px',
+                      fontSize: '0.70rem',
+                      backgroundColor: '#121212',
+                      border: '1px solid #262626',
+                      color: '#e5e7eb',
+                      borderRadius: '3px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Reset View
+                  </button>
+                </div>
               </div>
 
               {/* Main Visual Display: Candlestick Chart */}
@@ -716,6 +792,7 @@ export function App() {
                 <CandlestickChart
                   ref={chartRef}
                   data={chartCandles}
+                  indicators={indicators}
                   height="100%"
                   style={{ height: '100%' }}
                   seriesOptions={{
@@ -798,7 +875,7 @@ export function App() {
               }} />
             </div>
 
-            {/* Right Area: Stacked Sidebar */}
+            {/* Right Area: Stacked Sidebar or Docked Watchlist */}
             <div
               ref={sidebarRef}
               style={{
@@ -810,98 +887,112 @@ export function App() {
                 overflow: 'hidden'
               }}
             >
-              {/* TOP SECTION: Highlight Window & Basis Spread */}
-              <div
-                ref={topSectionRef}
-                style={{
-                  height: `calc(${(1 - optionChainRatio) * 100}% - 4px)`,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  overflow: 'hidden',
-                  minHeight: '140px'
-                }}
-              >
-                {/* 1. Highlight Window */}
-                <div style={{
-                  height: `calc(${highlightRatio * 100}% - 3px)`,
-                  minHeight: '80px',
-                  overflow: 'hidden'
-                }}>
-                  <HighlightWindow securities={securities} style={{ height: '100%' }} />
-                </div>
-
-                {/* ↕ SUB-VERTICAL RESIZER */}
-                <div
-                  onMouseDown={startDraggingSubV}
-                  title="Drag up/down to resize Highlight Window & Basis Spread"
-                  style={{
-                    height: '6px',
-                    flexShrink: 0,
-                    cursor: 'row-resize',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: isDraggingSubV ? '#171717' : 'transparent'
-                  }}
-                >
-                  <div style={{
-                    height: '1px',
-                    width: '32px',
-                    backgroundColor: isDraggingSubV ? '#5F7A9A' : '#262626',
-                    transition: 'background-color 0.15s ease'
-                  }} />
-                </div>
-
-                {/* 2. Basis Spread */}
-                <div style={{
-                  flex: 1,
-                  minHeight: '80px',
-                  overflow: 'hidden'
-                }}>
-                  <BasisSpreadWidget pairs={basisSpreads} style={{ height: '100%' }} />
-                </div>
-              </div>
-
-              {/* ↕ MAIN VERTICAL RESIZER */}
-              <div
-                onMouseDown={startDraggingV}
-                title="Drag up/down to adjust Option Chain height"
-                style={{
-                  height: '8px',
-                  flexShrink: 0,
-                  cursor: 'row-resize',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: isDraggingV ? '#171717' : 'transparent',
-                  transition: 'background-color 0.15s ease'
-                }}
-              >
-                <div style={{
-                  height: '2px',
-                  width: '42px',
-                  borderRadius: '1px',
-                  backgroundColor: isDraggingV ? '#5F7A9A' : '#262626',
-                  transition: 'background-color 0.15s ease'
-                }} />
-              </div>
-
-              {/* BOTTOM SECTION: Option Chain */}
-              <div style={{
-                height: `calc(${optionChainRatio * 100}% - 4px)`,
-                minHeight: '160px',
-                overflow: 'hidden',
-                display: 'flex',
-                flexDirection: 'column'
-              }}>
-                <OptionChainWidget
-                  data={optionChain}
-                  spotPrice={spotPrice}
-                  expiries={expiries}
-                  selectedExpiry={selectedExpiry}
-                  onSelectExpiry={handleSelectExpiry}
+              {isWatchlistOpen && watchlistMode === 'docked' ? (
+                <WatchlistDrawer
+                  isOpen={true}
+                  mode="docked"
+                  onChangeMode={(m) => setWatchlistMode(m)}
+                  onClose={() => setIsWatchlistOpen(false)}
+                  securities={securities}
+                  activeSymbol={activeWatchlistSymbol}
+                  onSelectSymbol={(sym) => setActiveWatchlistSymbol(sym)}
                 />
-              </div>
+              ) : (
+                <>
+                  {/* TOP SECTION: Highlight Window & Basis Spread */}
+                  <div
+                    ref={topSectionRef}
+                    style={{
+                      height: `calc(${(1 - optionChainRatio) * 100}% - 4px)`,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      overflow: 'hidden',
+                      minHeight: '140px'
+                    }}
+                  >
+                    {/* 1. Highlight Window */}
+                    <div style={{
+                      height: `calc(${highlightRatio * 100}% - 3px)`,
+                      minHeight: '80px',
+                      overflow: 'hidden'
+                    }}>
+                      <HighlightWindow securities={securities} style={{ height: '100%' }} />
+                    </div>
+
+                    {/* ↕ SUB-VERTICAL RESIZER */}
+                    <div
+                      onMouseDown={startDraggingSubV}
+                      title="Drag up/down to resize Highlight Window & Basis Spread"
+                      style={{
+                        height: '6px',
+                        flexShrink: 0,
+                        cursor: 'row-resize',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: isDraggingSubV ? '#171717' : 'transparent'
+                      }}
+                    >
+                      <div style={{
+                        height: '1px',
+                        width: '32px',
+                        backgroundColor: isDraggingSubV ? '#5F7A9A' : '#262626',
+                        transition: 'background-color 0.15s ease'
+                      }} />
+                    </div>
+
+                    {/* 2. Basis Spread */}
+                    <div style={{
+                      flex: 1,
+                      minHeight: '80px',
+                      overflow: 'hidden'
+                    }}>
+                      <BasisSpreadWidget pairs={basisSpreads} style={{ height: '100%' }} />
+                    </div>
+                  </div>
+
+                  {/* ↕ MAIN VERTICAL RESIZER */}
+                  <div
+                    onMouseDown={startDraggingV}
+                    title="Drag up/down to adjust Option Chain height"
+                    style={{
+                      height: '8px',
+                      flexShrink: 0,
+                      cursor: 'row-resize',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: isDraggingV ? '#171717' : 'transparent',
+                      transition: 'background-color 0.15s ease'
+                    }}
+                  >
+                    <div style={{
+                      height: '2px',
+                      width: '42px',
+                      borderRadius: '1px',
+                      backgroundColor: isDraggingV ? '#5F7A9A' : '#262626',
+                      transition: 'background-color 0.15s ease'
+                    }} />
+                  </div>
+
+                  {/* BOTTOM SECTION: Option Chain */}
+                  <div style={{
+                    height: `calc(${optionChainRatio * 100}% - 4px)`,
+                    minHeight: '160px',
+                    overflow: 'hidden',
+                    display: 'flex',
+                    flexDirection: 'column'
+                  }}>
+                    <OptionChainWidget
+                      data={optionChain}
+                      spotPrice={spotPrice}
+                      expiries={expiries}
+                      selectedExpiry={selectedExpiry}
+                      onSelectExpiry={handleSelectExpiry}
+                    />
+                  </div>
+                </>
+              )}
             </div>
           </>
         ) : (
@@ -914,6 +1005,32 @@ export function App() {
             flexDirection: 'column'
           }}>
             <NiftyHeatmap />
+          </div>
+        )}
+
+        {/* Watchlist: Overlay Slider or Fullscreen Mode */}
+        {isWatchlistOpen && watchlistMode !== 'docked' && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              bottom: 0,
+              right: '44px',
+              left: watchlistMode === 'fullscreen' ? 0 : 'auto',
+              width: watchlistMode === 'fullscreen' ? 'auto' : '380px',
+              maxWidth: 'calc(100% - 44px)',
+              zIndex: 70
+            }}
+          >
+            <WatchlistDrawer
+              isOpen={true}
+              mode={watchlistMode}
+              onChangeMode={(m) => setWatchlistMode(m)}
+              onClose={() => setIsWatchlistOpen(false)}
+              securities={securities}
+              activeSymbol={activeWatchlistSymbol}
+              onSelectSymbol={(sym) => setActiveWatchlistSymbol(sym)}
+            />
           </div>
         )}
 
@@ -983,6 +1100,44 @@ export function App() {
                 <rect x="13" y="2" width="9" height="6" rx="1"></rect>
                 <rect x="13" y="10" width="9" height="12" rx="1"></rect>
                 <rect x="2" y="15" width="9" height="7" rx="1"></rect>
+              </svg>
+            </button>
+
+            {/* 3. Watchlist Icon (Below Heatmap) */}
+            <button
+              onClick={() => {
+                if (isWatchlistOpen) {
+                  setIsWatchlistOpen(false);
+                } else {
+                  setIsWatchlistOpen(true);
+                  if (watchlistMode !== 'docked' && watchlistMode !== 'fullscreen') {
+                    setWatchlistMode('overlay');
+                  }
+                }
+              }}
+              title="Watchlist (NIFTY 50 & Indices)"
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '4px',
+                backgroundColor: isWatchlistOpen ? 'rgba(95, 122, 154, 0.2)' : 'transparent',
+                border: isWatchlistOpen ? '1px solid #5F7A9A' : '1px solid transparent',
+                color: isWatchlistOpen ? '#5F7A9A' : '#737373',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 0,
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="8" y1="6" x2="21" y2="6"></line>
+                <line x1="8" y1="12" x2="21" y2="12"></line>
+                <line x1="8" y1="18" x2="21" y2="18"></line>
+                <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                <line x1="3" y1="18" x2="3.01" y2="18"></line>
               </svg>
             </button>
           </div>
@@ -1073,6 +1228,15 @@ export function App() {
           </div>
         </div>
       )}
+
+      {/* ===================== INDICATORS MODAL ===================== */}
+      <IndicatorsModal
+        isOpen={isIndicatorsOpen}
+        onClose={() => setIsIndicatorsOpen(false)}
+        indicators={indicators}
+        onUpdateIndicators={handleUpdateIndicators}
+        onResetIndicators={handleResetIndicators}
+      />
 
       {/* ===================== SETTINGS MODAL ===================== */}
       <SettingsModal

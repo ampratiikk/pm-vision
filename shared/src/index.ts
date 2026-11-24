@@ -254,3 +254,67 @@ export function getMarketSessionInfo(checkDate: Date = new Date()): MarketSessio
   }
   return { status: 'CLOSED', label: 'Markets Closed', dotColor: '#ef4444' };
 }
+
+/**
+ * Checks if GIFT NIFTY (NSE IX) is currently in an active trading session.
+ * GIFT NIFTY operates in two sessions Monday to Friday:
+ * - Session 1: 06:30 AM to 03:40 PM IST
+ * - Session 2: 04:35 PM to 02:45 AM IST (next day)
+ */
+export function isGiftNiftyMarketOpen(checkDate: Date = new Date()): boolean {
+  const utc = checkDate.getTime() + checkDate.getTimezoneOffset() * 60000;
+  const istDate = new Date(utc + 3600000 * 5.5);
+
+  const day = istDate.getDay(); // 0 = Sun, 1 = Mon, ..., 6 = Sat
+  const currentMinute = istDate.getHours() * 60 + istDate.getMinutes();
+
+  // Sunday: Closed all day
+  if (day === 0) return false;
+
+  // Saturday: Only early morning Session 2 tail (00:00 to 02:45 AM)
+  if (day === 6) {
+    return currentMinute <= 2 * 60 + 45; // up to 02:45 AM
+  }
+
+  // Monday: Starts at 06:30 AM (no early morning session on Mon)
+  if (day === 1) {
+    if (currentMinute < 6 * 60 + 30) return false;
+  } else {
+    // Tuesday to Friday: Session 2 continuation from previous night (00:00 to 02:45 AM)
+    if (currentMinute <= 2 * 60 + 45) return true;
+  }
+
+  // Session 1: 06:30 AM to 03:40 PM (390 to 940 mins)
+  if (currentMinute >= 6 * 60 + 30 && currentMinute <= 15 * 60 + 40) {
+    return true;
+  }
+
+  // Session 2: 04:35 PM to 11:59 PM (995 to 1440 mins)
+  if (currentMinute >= 16 * 60 + 35) {
+    return true;
+  }
+
+  return false;
+}
+
+export function getGiftNiftySessionInfo(checkDate: Date = new Date()): MarketSessionInfo {
+  const isOpen = isGiftNiftyMarketOpen(checkDate);
+  const utc = checkDate.getTime() + checkDate.getTimezoneOffset() * 60000;
+  const istDate = new Date(utc + 3600000 * 5.5);
+  const currentMinute = istDate.getHours() * 60 + istDate.getMinutes();
+
+  if (isOpen) {
+    const sessionName = currentMinute >= 6 * 60 + 30 && currentMinute <= 15 * 60 + 40 ? 'Session 1' : 'Session 2';
+    return {
+      status: 'LIVE',
+      label: `GIFT Live (${sessionName})`,
+      dotColor: '#10b981'
+    };
+  }
+
+  return {
+    status: 'CLOSED',
+    label: 'GIFT Closed',
+    dotColor: '#ef4444'
+  };
+}
