@@ -19,584 +19,855 @@ export interface Constituent {
  * All 50 constituents categorized into TradingView sector blocks. Total weight = 100.00%.
  */
 export const NIFTY_50_CONSTITUENTS: Constituent[] = [
-  // 1. Finance (38.79%)
   {
-    symbol: 'HDFCBANK',
-    name: 'HDFC Bank Ltd.',
-    sector: 'Finance',
-    weight: 10.68,
-    ltp: 1735.40,
-    changes: { '15m': -0.45, '30m': -1.10, '1H': -1.85, '1D': -3.33, '1W': -1.80 },
-    high: 1795.00,
-    low: 1728.00,
-    volume: '22.4M'
+    "symbol": "HDFCBANK",
+    "name": "HDFC Bank Ltd.",
+    "sector": "Finance",
+    "weight": 10.72,
+    "ltp": 1745,
+    "changes": {
+      "15m": 0.15,
+      "30m": 0.35,
+      "1H": 0.55,
+      "1D": 0.82,
+      "1W": 1.4
+    },
+    "high": 1756,
+    "low": 1735.1,
+    "volume": "22.4M"
   },
   {
-    symbol: 'ICICIBANK',
-    name: 'ICICI Bank Ltd.',
-    sector: 'Finance',
-    weight: 9.78,
-    ltp: 1252.80,
-    changes: { '15m': -0.38, '30m': -0.95, '1H': -1.72, '1D': -3.32, '1W': -0.90 },
-    high: 1298.00,
-    low: 1245.00,
-    volume: '14.8M'
+    "symbol": "ICICIBANK",
+    "name": "ICICI Bank Ltd.",
+    "sector": "Finance",
+    "weight": 8.76,
+    "ltp": 1260.8,
+    "changes": {
+      "15m": -0.08,
+      "30m": -0.18,
+      "1H": -0.25,
+      "1D": -0.34,
+      "1W": 0.9
+    },
+    "high": 1272.5,
+    "low": 1254,
+    "volume": "14.8M"
   },
   {
-    symbol: 'SBIN',
-    name: 'State Bank of India',
-    sector: 'Finance',
-    weight: 4.05,
-    ltp: 812.50,
-    changes: { '15m': -0.30, '30m': -0.80, '1H': -1.55, '1D': -2.79, '1W': +0.45 },
-    high: 836.00,
-    low: 808.00,
-    volume: '16.5M'
+    "symbol": "AXISBANK",
+    "name": "Axis Bank Ltd.",
+    "sector": "Finance",
+    "weight": 3.11,
+    "ltp": 1175.3,
+    "changes": {
+      "15m": 0.1,
+      "30m": 0.25,
+      "1H": 0.4,
+      "1D": 0.55,
+      "1W": -1.2
+    },
+    "high": 1191,
+    "low": 1168.4,
+    "volume": "8.2M"
   },
   {
-    symbol: 'AXISBANK',
-    name: 'Axis Bank Ltd.',
-    sector: 'Finance',
-    weight: 3.37,
-    ltp: 1165.20,
-    changes: { '15m': -0.52, '30m': -1.25, '1H': -2.10, '1D': -3.97, '1W': -2.40 },
-    high: 1215.00,
-    low: 1158.00,
-    volume: '8.2M'
+    "symbol": "SBIN",
+    "name": "State Bank of India",
+    "sector": "Finance",
+    "weight": 2.82,
+    "ltp": 815.4,
+    "changes": {
+      "15m": 0.2,
+      "30m": 0.45,
+      "1H": 0.7,
+      "1D": 0.99,
+      "1W": 1.85
+    },
+    "high": 824.9,
+    "low": 808.2,
+    "volume": "16.5M"
   },
   {
-    symbol: 'KOTAKBANK',
-    name: 'Kotak Mahindra Bank',
-    sector: 'Finance',
-    weight: 3.14,
-    ltp: 1782.00,
-    changes: { '15m': -0.25, '30m': -0.65, '1H': -1.35, '1D': -2.51, '1W': -1.15 },
-    high: 1830.00,
-    low: 1775.00,
-    volume: '4.1M'
+    "symbol": "KOTAKBANK",
+    "name": "Kotak Mahindra Bank",
+    "sector": "Finance",
+    "weight": 2.63,
+    "ltp": 1785.9,
+    "changes": {
+      "15m": -0.12,
+      "30m": -0.28,
+      "1H": -0.45,
+      "1D": -0.62,
+      "1W": -0.85
+    },
+    "high": 1805,
+    "low": 1778,
+    "volume": "4.1M"
   },
   {
-    symbol: 'BAJFINANCE',
-    name: 'Bajaj Finance Ltd.',
-    sector: 'Finance',
-    weight: 2.53,
-    ltp: 6820.00,
-    changes: { '15m': -0.28, '30m': -0.72, '1H': -1.45, '1D': -2.36, '1W': -0.50 },
-    high: 6990.00,
-    low: 6790.00,
-    volume: '2.3M'
+    "symbol": "BAJFINANCE",
+    "name": "Bajaj Finance Ltd.",
+    "sector": "Finance",
+    "weight": 2.01,
+    "ltp": 6850,
+    "changes": {
+      "15m": 0.12,
+      "30m": 0.3,
+      "1H": 0.48,
+      "1D": 0.66,
+      "1W": 0.5
+    },
+    "high": 6920,
+    "low": 6810,
+    "volume": "2.3M"
   },
   {
-    symbol: 'BSE',
-    name: 'BSE Ltd.',
-    sector: 'Finance',
-    weight: 1.30,
-    ltp: 4680.00,
-    changes: { '15m': -0.08, '30m': -0.25, '1H': -0.42, '1D': -0.63, '1W': +3.80 },
-    high: 4740.00,
-    low: 4620.00,
-    volume: '1.7M'
+    "symbol": "BAJAJFINSV",
+    "name": "Bajaj Finserv Ltd.",
+    "sector": "Finance",
+    "weight": 1.05,
+    "ltp": 1620.5,
+    "changes": {
+      "15m": 0.15,
+      "30m": 0.35,
+      "1H": 0.55,
+      "1D": 0.76,
+      "1W": 0.9
+    },
+    "high": 1635,
+    "low": 1610,
+    "volume": "1.9M"
   },
   {
-    symbol: 'SHRIRAMFIN',
-    name: 'Shriram Finance Ltd.',
-    sector: 'Finance',
-    weight: 1.16,
-    ltp: 3120.00,
-    changes: { '15m': +0.35, '30m': +0.85, '1H': +1.60, '1D': +2.46, '1W': +4.10 },
-    high: 3165.00,
-    low: 3040.00,
-    volume: '2.1M'
+    "symbol": "INDUSINDBK",
+    "name": "IndusInd Bank Ltd.",
+    "sector": "Finance",
+    "weight": 0.91,
+    "ltp": 1020.4,
+    "changes": {
+      "15m": -0.15,
+      "30m": -0.35,
+      "1H": -0.55,
+      "1D": -0.73,
+      "1W": -2.1
+    },
+    "high": 1035,
+    "low": 1012,
+    "volume": "3.4M"
   },
   {
-    symbol: 'BAJAJFINSV',
-    name: 'Bajaj Finserv Ltd.',
-    sector: 'Finance',
-    weight: 0.93,
-    ltp: 1725.00,
-    changes: { '15m': -0.08, '30m': -0.22, '1H': -0.40, '1D': -0.63, '1W': +0.80 },
-    high: 1745.00,
-    low: 1715.00,
-    volume: '2.0M'
+    "symbol": "SHRIRAMFIN",
+    "name": "Shriram Finance Ltd.",
+    "sector": "Finance",
+    "weight": 0.91,
+    "ltp": 3050.2,
+    "changes": {
+      "15m": 0.18,
+      "30m": 0.42,
+      "1H": 0.68,
+      "1D": 0.94,
+      "1W": 2.15
+    },
+    "high": 3085,
+    "low": 3020,
+    "volume": "1.8M"
   },
   {
-    symbol: 'SBILIFE',
-    name: 'SBI Life Insurance Co.',
-    sector: 'Finance',
-    weight: 0.69,
-    ltp: 1480.00,
-    changes: { '15m': -0.15, '30m': -0.38, '1H': -0.75, '1D': -1.18, '1W': +0.20 },
-    high: 1505.00,
-    low: 1468.00,
-    volume: '1.6M'
+    "symbol": "HDFCLIFE",
+    "name": "HDFC Life Insurance",
+    "sector": "Finance",
+    "weight": 0.57,
+    "ltp": 695.4,
+    "changes": {
+      "15m": -0.05,
+      "30m": -0.12,
+      "1H": -0.2,
+      "1D": -0.3,
+      "1W": 0.4
+    },
+    "high": 704,
+    "low": 690.5,
+    "volume": "2.8M"
   },
   {
-    symbol: 'JIOFIN',
-    name: 'Jio Financial Services',
-    sector: 'Finance',
-    weight: 0.63,
-    ltp: 310.50,
-    changes: { '15m': -0.30, '30m': -0.75, '1H': -1.50, '1D': -2.34, '1W': -1.20 },
-    high: 320.00,
-    low: 307.00,
-    volume: '19.5M'
+    "symbol": "SBILIFE",
+    "name": "SBI Life Insurance",
+    "sector": "Finance",
+    "weight": 0.53,
+    "ltp": 1480,
+    "changes": {
+      "15m": 0.1,
+      "30m": 0.28,
+      "1H": 0.45,
+      "1D": 0.64,
+      "1W": 1.1
+    },
+    "high": 1495,
+    "low": 1472,
+    "volume": "1.6M"
   },
   {
-    symbol: 'HDFCLIFE',
-    name: 'HDFC Life Insurance Co.',
-    sector: 'Finance',
-    weight: 0.53,
-    ltp: 682.00,
-    changes: { '15m': -0.30, '30m': -0.75, '1H': -1.48, '1D': -2.33, '1W': -1.40 },
-    high: 702.00,
-    low: 678.00,
-    volume: '4.2M'
-  },
-
-  // 2. Energy minerals (9.34%)
-  {
-    symbol: 'RELIANCE',
-    name: 'Reliance Industries Ltd.',
-    sector: 'Energy minerals',
-    weight: 7.80,
-    ltp: 2518.50,
-    changes: { '15m': -0.22, '30m': -0.65, '1H': -1.15, '1D': -1.92, '1W': -0.40 },
-    high: 2570.00,
-    low: 2505.00,
-    volume: '11.2M'
+    "symbol": "INFY",
+    "name": "Infosys Ltd.",
+    "sector": "Technology services",
+    "weight": 5.41,
+    "ltp": 1850.2,
+    "changes": {
+      "15m": 0.15,
+      "30m": 0.38,
+      "1H": 0.6,
+      "1D": 0.81,
+      "1W": 1.65
+    },
+    "high": 1865,
+    "low": 1838,
+    "volume": "12.4M"
   },
   {
-    symbol: 'COALINDIA',
-    name: 'Coal India Ltd.',
-    sector: 'Energy minerals',
-    weight: 0.80,
-    ltp: 385.00,
-    changes: { '15m': -0.28, '30m': -0.68, '1H': -1.30, '1D': -2.05, '1W': -1.10 },
-    high: 395.00,
-    low: 381.00,
-    volume: '10.5M'
+    "symbol": "TCS",
+    "name": "Tata Consultancy Services",
+    "sector": "Technology services",
+    "weight": 3.78,
+    "ltp": 4120.5,
+    "changes": {
+      "15m": -0.08,
+      "30m": -0.2,
+      "1H": -0.32,
+      "1D": -0.44,
+      "1W": 0.6
+    },
+    "high": 4160,
+    "low": 4105,
+    "volume": "3.6M"
   },
   {
-    symbol: 'ONGC',
-    name: 'ONGC Ltd.',
-    sector: 'Energy minerals',
-    weight: 0.74,
-    ltp: 248.50,
-    changes: { '15m': -0.04, '30m': -0.10, '1H': -0.18, '1D': -0.27, '1W': +0.60 },
-    high: 251.00,
-    low: 246.50,
-    volume: '14.1M'
-  },
-
-  // 3. Consumer durables (8.22%)
-  {
-    symbol: 'M&M',
-    name: 'Mahindra & Mahindra Ltd.',
-    sector: 'Consumer durables',
-    weight: 2.66,
-    ltp: 2890.00,
-    changes: { '15m': -0.15, '30m': -0.45, '1H': -0.92, '1D': -1.62, '1W': +0.80 },
-    high: 2945.00,
-    low: 2872.00,
-    volume: '3.1M'
+    "symbol": "HCLTECH",
+    "name": "HCL Technologies Ltd.",
+    "sector": "Technology services",
+    "weight": 1.53,
+    "ltp": 1820.8,
+    "changes": {
+      "15m": 0.25,
+      "30m": 0.58,
+      "1H": 0.92,
+      "1D": 1.25,
+      "1W": 2.8
+    },
+    "high": 1835,
+    "low": 1802,
+    "volume": "3.8M"
   },
   {
-    symbol: 'TITAN',
-    name: 'Titan Company Ltd.',
-    sector: 'Consumer durables',
-    weight: 1.65,
-    ltp: 3240.00,
-    changes: { '15m': +0.18, '30m': +0.42, '1H': +0.85, '1D': +1.30, '1W': +2.60 },
-    high: 3265.00,
-    low: 3190.00,
-    volume: '1.9M'
+    "symbol": "TECHM",
+    "name": "Tech Mahindra Ltd.",
+    "sector": "Technology services",
+    "weight": 0.81,
+    "ltp": 1680,
+    "changes": {
+      "15m": 0.12,
+      "30m": 0.32,
+      "1H": 0.5,
+      "1D": 0.69,
+      "1W": 1.2
+    },
+    "high": 1695,
+    "low": 1670,
+    "volume": "2.5M"
   },
   {
-    symbol: 'MARUTI',
-    name: 'Maruti Suzuki India',
-    sector: 'Consumer durables',
-    weight: 1.50,
-    ltp: 11450.00,
-    changes: { '15m': 0.00, '30m': -0.05, '1H': -0.02, '1D': -0.01, '1W': +1.40 },
-    high: 11520.00,
-    low: 11390.00,
-    volume: '0.8M'
+    "symbol": "WIPRO",
+    "name": "Wipro Ltd.",
+    "sector": "Technology services",
+    "weight": 0.72,
+    "ltp": 565.4,
+    "changes": {
+      "15m": -0.1,
+      "30m": -0.25,
+      "1H": -0.4,
+      "1D": -0.56,
+      "1W": -0.3
+    },
+    "high": 572,
+    "low": 561,
+    "volume": "4.2M"
   },
   {
-    symbol: 'BAJAJ_AUTO',
-    name: 'Bajaj Auto Ltd.',
-    sector: 'Consumer durables',
-    weight: 1.00,
-    ltp: 8950.00,
-    changes: { '15m': -0.14, '30m': -0.38, '1H': -0.72, '1D': -1.13, '1W': +0.40 },
-    high: 9080.00,
-    low: 8890.00,
-    volume: '0.7M'
+    "symbol": "RELIANCE",
+    "name": "Reliance Industries Ltd.",
+    "sector": "Energy minerals",
+    "weight": 7.9,
+    "ltp": 1265.6,
+    "changes": {
+      "15m": 0.2,
+      "30m": 0.48,
+      "1H": 0.75,
+      "1D": 1.02,
+      "1W": 2.1
+    },
+    "high": 1278,
+    "low": 1256.5,
+    "volume": "18.5M"
   },
   {
-    symbol: 'EICHERMOT',
-    name: 'Eicher Motors Ltd.',
-    sector: 'Consumer durables',
-    weight: 0.94,
-    ltp: 4820.00,
-    changes: { '15m': +0.06, '30m': +0.15, '1H': +0.28, '1D': +0.42, '1W': +2.30 },
-    high: 4860.00,
-    low: 4780.00,
-    volume: '0.9M'
+    "symbol": "ONGC",
+    "name": "Oil & Natural Gas Corp.",
+    "sector": "Energy minerals",
+    "weight": 1.15,
+    "ltp": 250.2,
+    "changes": {
+      "15m": 0.15,
+      "30m": 0.38,
+      "1H": 0.6,
+      "1D": 0.85,
+      "1W": 1.45
+    },
+    "high": 253.4,
+    "low": 247.8,
+    "volume": "8.9M"
   },
   {
-    symbol: 'TMPV',
-    name: 'Tata Motors Passenger Vehicles',
-    sector: 'Consumer durables',
-    weight: 0.47,
-    ltp: 785.00,
-    changes: { '15m': +0.10, '30m': +0.25, '1H': +0.45, '1D': +0.73, '1W': +2.50 },
-    high: 796.00,
-    low: 776.00,
-    volume: '8.4M'
-  },
-
-  // 4. Technology services (7.42%)
-  {
-    symbol: 'INFY',
-    name: 'Infosys Ltd.',
-    sector: 'Technology services',
-    weight: 3.27,
-    ltp: 1865.00,
-    changes: { '15m': +0.12, '30m': +0.25, '1H': +0.38, '1D': +0.49, '1W': +2.15 },
-    high: 1882.00,
-    low: 1848.00,
-    volume: '7.8M'
+    "symbol": "COALINDIA",
+    "name": "Coal India Ltd.",
+    "sector": "Energy minerals",
+    "weight": 1.1,
+    "ltp": 410.5,
+    "changes": {
+      "15m": -0.08,
+      "30m": -0.2,
+      "1H": -0.32,
+      "1D": -0.44,
+      "1W": 0.8
+    },
+    "high": 416,
+    "low": 407.2,
+    "volume": "7.1M"
   },
   {
-    symbol: 'TCS',
-    name: 'Tata Consultancy Services',
-    sector: 'Technology services',
-    weight: 2.03,
-    ltp: 4150.00,
-    changes: { '15m': +0.45, '30m': +1.15, '1H': +2.20, '1D': +3.53, '1W': +4.20 },
-    high: 4180.00,
-    low: 4010.00,
-    volume: '4.2M'
+    "symbol": "BPCL",
+    "name": "Bharat Petroleum Corp.",
+    "sector": "Energy minerals",
+    "weight": 0.57,
+    "ltp": 295.4,
+    "changes": {
+      "15m": 0.22,
+      "30m": 0.5,
+      "1H": 0.8,
+      "1D": 1.1,
+      "1W": 2.25
+    },
+    "high": 299,
+    "low": 292.1,
+    "volume": "5.2M"
   },
   {
-    symbol: 'HCLTECH',
-    name: 'HCL Technologies Ltd.',
-    sector: 'Technology services',
-    weight: 1.19,
-    ltp: 1840.00,
-    changes: { '15m': +0.22, '30m': +0.55, '1H': +0.95, '1D': +1.48, '1W': +2.80 },
-    high: 1860.00,
-    low: 1812.00,
-    volume: '3.6M'
+    "symbol": "M&M",
+    "name": "Mahindra & Mahindra",
+    "sector": "Consumer durables",
+    "weight": 2.44,
+    "ltp": 2950.4,
+    "changes": {
+      "15m": 0.25,
+      "30m": 0.6,
+      "1H": 0.95,
+      "1D": 1.3,
+      "1W": 2.9
+    },
+    "high": 2980,
+    "low": 2925,
+    "volume": "4.8M"
   },
   {
-    symbol: 'TECHM',
-    name: 'Tech Mahindra Ltd.',
-    sector: 'Technology services',
-    weight: 0.93,
-    ltp: 1685.00,
-    changes: { '15m': +0.12, '30m': +0.30, '1H': +0.55, '1D': +0.85, '1W': +2.10 },
-    high: 1705.00,
-    low: 1665.00,
-    volume: '2.4M'
-  },
-
-  // 5. Non-energy minerals (5.74%)
-  {
-    symbol: 'TATASTEEL',
-    name: 'Tata Steel Ltd.',
-    sector: 'Non-energy minerals',
-    weight: 1.27,
-    ltp: 138.50,
-    changes: { '15m': -1.15, '30m': -2.80, '1H': -5.10, '1D': -8.43, '1W': -6.80 },
-    high: 152.00,
-    low: 136.50,
-    volume: '48.2M'
+    "symbol": "MARUTI",
+    "name": "Maruti Suzuki India",
+    "sector": "Consumer durables",
+    "weight": 1.77,
+    "ltp": 11200,
+    "changes": {
+      "15m": -0.08,
+      "30m": -0.18,
+      "1H": -0.28,
+      "1D": -0.4,
+      "1W": 1.1
+    },
+    "high": 11350,
+    "low": 11150,
+    "volume": "0.8M"
   },
   {
-    symbol: 'ULTRACEMCO',
-    name: 'UltraTech Cement Ltd.',
-    sector: 'Non-energy minerals',
-    weight: 1.26,
-    ltp: 11050.00,
-    changes: { '15m': -0.32, '30m': -0.75, '1H': -1.40, '1D': -2.23, '1W': -1.50 },
-    high: 11340.00,
-    low: 10980.00,
-    volume: '0.6M'
+    "symbol": "TATAMOTORS",
+    "name": "Tata Motors Ltd.",
+    "sector": "Consumer durables",
+    "weight": 1.58,
+    "ltp": 785.6,
+    "changes": {
+      "15m": -0.2,
+      "30m": -0.5,
+      "1H": -0.8,
+      "1D": -1.06,
+      "1W": -1.85
+    },
+    "high": 798,
+    "low": 781.2,
+    "volume": "11.5M"
   },
   {
-    symbol: 'HINDALCO',
-    name: 'Hindalco Industries Ltd.',
-    sector: 'Non-energy minerals',
-    weight: 1.12,
-    ltp: 642.00,
-    changes: { '15m': -0.42, '30m': -1.05, '1H': -1.95, '1D': -3.13, '1W': -2.60 },
-    high: 665.00,
-    low: 638.00,
-    volume: '7.4M'
+    "symbol": "TITAN",
+    "name": "Titan Company Ltd.",
+    "sector": "Consumer durables",
+    "weight": 1.44,
+    "ltp": 3240,
+    "changes": {
+      "15m": 0.12,
+      "30m": 0.3,
+      "1H": 0.48,
+      "1D": 0.68,
+      "1W": 1.5
+    },
+    "high": 3270,
+    "low": 3220,
+    "volume": "1.4M"
   },
   {
-    symbol: 'JSWSTEEL',
-    name: 'JSW Steel Ltd.',
-    sector: 'Non-energy minerals',
-    weight: 1.09,
-    ltp: 945.00,
-    changes: { '15m': -0.25, '30m': -0.62, '1H': -1.20, '1D': -1.88, '1W': -1.40 },
-    high: 968.00,
-    low: 938.00,
-    volume: '4.8M'
+    "symbol": "ASIANPAINT",
+    "name": "Asian Paints Ltd.",
+    "sector": "Consumer durables",
+    "weight": 1.1,
+    "ltp": 2480,
+    "changes": {
+      "15m": -0.12,
+      "30m": -0.28,
+      "1H": -0.44,
+      "1D": -0.6,
+      "1W": -0.75
+    },
+    "high": 2510,
+    "low": 2465,
+    "volume": "1.9M"
   },
   {
-    symbol: 'GRASIM',
-    name: 'Grasim Industries Ltd.',
-    sector: 'Non-energy minerals',
-    weight: 1.00,
-    ltp: 2540.00,
-    changes: { '15m': -0.12, '30m': -0.30, '1H': -0.58, '1D': -0.92, '1W': +0.50 },
-    high: 2575.00,
-    low: 2520.00,
-    volume: '1.2M'
-  },
-
-  // 6. Communications (5.53%)
-  {
-    symbol: 'BHARTIARTL',
-    name: 'Bharti Airtel Ltd.',
-    sector: 'Communications',
-    weight: 5.53,
-    ltp: 1582.40,
-    changes: { '15m': -0.18, '30m': -0.45, '1H': -0.90, '1D': -1.54, '1W': +1.20 },
-    high: 1610.00,
-    low: 1572.00,
-    volume: '6.9M'
-  },
-
-  // 7. Consumer non durables (5.44%)
-  {
-    symbol: 'ITC',
-    name: 'ITC Ltd.',
-    sector: 'Consumer non durables',
-    weight: 2.46,
-    ltp: 472.50,
-    changes: { '15m': +0.08, '30m': +0.22, '1H': +0.42, '1D': +0.64, '1W': +1.85 },
-    high: 476.00,
-    low: 468.00,
-    volume: '18.4M'
+    "symbol": "BAJAJ-AUTO",
+    "name": "Bajaj Auto Ltd.",
+    "sector": "Consumer durables",
+    "weight": 0.86,
+    "ltp": 9450,
+    "changes": {
+      "15m": 0.12,
+      "30m": 0.3,
+      "1H": 0.48,
+      "1D": 0.66,
+      "1W": 1.2
+    },
+    "high": 9550,
+    "low": 9400,
+    "volume": "0.7M"
   },
   {
-    symbol: 'HINDUNILVR',
-    name: 'Hindustan Unilever Ltd.',
-    sector: 'Consumer non durables',
-    weight: 1.56,
-    ltp: 2390.00,
-    changes: { '15m': -0.20, '30m': -0.52, '1H': -1.05, '1D': -1.63, '1W': -2.10 },
-    high: 2435.00,
-    low: 2380.00,
-    volume: '2.5M'
+    "symbol": "EICHERMOT",
+    "name": "Eicher Motors Ltd.",
+    "sector": "Consumer durables",
+    "weight": 0.67,
+    "ltp": 4820,
+    "changes": {
+      "15m": 0.14,
+      "30m": 0.35,
+      "1H": 0.52,
+      "1D": 0.73,
+      "1W": 2.3
+    },
+    "high": 4865,
+    "low": 4790,
+    "volume": "0.9M"
   },
   {
-    symbol: 'NESTLEIND',
-    name: 'Nestlé India Ltd.',
-    sector: 'Consumer non durables',
-    weight: 0.79,
-    ltp: 2240.00,
-    changes: { '15m': -0.18, '30m': -0.45, '1H': -0.90, '1D': -1.44, '1W': -1.70 },
-    high: 2280.00,
-    low: 2225.00,
-    volume: '0.8M'
+    "symbol": "HEROMOTOCO",
+    "name": "Hero MotoCorp Ltd.",
+    "sector": "Consumer durables",
+    "weight": 0.57,
+    "ltp": 4650,
+    "changes": {
+      "15m": -0.08,
+      "30m": -0.18,
+      "1H": -0.28,
+      "1D": -0.39,
+      "1W": 0.45
+    },
+    "high": 4710,
+    "low": 4625,
+    "volume": "0.6M"
   },
   {
-    symbol: 'TATACONSUM',
-    name: 'Tata Consumer Products',
-    sector: 'Consumer non durables',
-    weight: 0.63,
-    ltp: 925.00,
-    changes: { '15m': -0.25, '30m': -0.65, '1H': -1.25, '1D': -1.98, '1W': -1.60 },
-    high: 948.00,
-    low: 918.00,
-    volume: '2.8M'
-  },
-
-  // 8. Transportation (4.57%)
-  {
-    symbol: 'ETERNAL',
-    name: 'Eternal Ltd. (Zomato)',
-    sector: 'Transportation',
-    weight: 2.25,
-    ltp: 268.40,
-    changes: { '15m': -0.10, '30m': -0.22, '1H': -0.40, '1D': -0.52, '1W': +3.10 },
-    high: 274.00,
-    low: 265.00,
-    volume: '28.0M'
+    "symbol": "ITC",
+    "name": "ITC Ltd.",
+    "sector": "Consumer non durables",
+    "weight": 3.69,
+    "ltp": 465.2,
+    "changes": {
+      "15m": 0.1,
+      "30m": 0.28,
+      "1H": 0.45,
+      "1D": 0.61,
+      "1W": 1.2
+    },
+    "high": 469.5,
+    "low": 463,
+    "volume": "14.2M"
   },
   {
-    symbol: 'ADANIPORTS',
-    name: 'Adani Ports & SEZ Ltd.',
-    sector: 'Transportation',
-    weight: 1.27,
-    ltp: 1210.00,
-    changes: { '15m': +0.02, '30m': +0.05, '1H': +0.08, '1D': +0.10, '1W': +1.60 },
-    high: 1225.00,
-    low: 1198.00,
-    volume: '4.5M'
+    "symbol": "HINDUNILVR",
+    "name": "Hindustan Unilever Ltd.",
+    "sector": "Consumer non durables",
+    "weight": 2.35,
+    "ltp": 2380,
+    "changes": {
+      "15m": -0.1,
+      "30m": -0.25,
+      "1H": -0.38,
+      "1D": -0.52,
+      "1W": -0.8
+    },
+    "high": 2405,
+    "low": 2372,
+    "volume": "2.8M"
   },
   {
-    symbol: 'INDIGO',
-    name: 'InterGlobe Aviation (IndiGo)',
-    sector: 'Transportation',
-    weight: 1.05,
-    ltp: 4180.00,
-    changes: { '15m': -0.15, '30m': -0.40, '1H': -0.75, '1D': -1.16, '1W': +0.90 },
-    high: 4240.00,
-    low: 4140.00,
-    volume: '1.4M'
-  },
-
-  // 9. Health technology (4.53%)
-  {
-    symbol: 'SUNPHARMA',
-    name: 'Sun Pharma Industries',
-    sector: 'Health technology',
-    weight: 1.71,
-    ltp: 1785.00,
-    changes: { '15m': -0.12, '30m': -0.38, '1H': -0.80, '1D': -1.32, '1W': +0.60 },
-    high: 1812.00,
-    low: 1776.00,
-    volume: '2.8M'
+    "symbol": "NESTLEIND",
+    "name": "Nestle India Ltd.",
+    "sector": "Consumer non durables",
+    "weight": 0.81,
+    "ltp": 2240,
+    "changes": {
+      "15m": -0.06,
+      "30m": -0.16,
+      "1H": -0.25,
+      "1D": -0.36,
+      "1W": 0.2
+    },
+    "high": 2260,
+    "low": 2230,
+    "volume": "0.8M"
   },
   {
-    symbol: 'APOLLOHOSP',
-    name: 'Apollo Hospitals',
-    sector: 'Health technology',
-    weight: 0.76,
-    ltp: 6940.00,
-    changes: { '15m': -0.10, '30m': -0.25, '1H': -0.48, '1D': -0.73, '1W': +1.20 },
-    high: 7020.00,
-    low: 6890.00,
-    volume: '0.7M'
+    "symbol": "TATACONSUM",
+    "name": "Tata Consumer Products",
+    "sector": "Consumer non durables",
+    "weight": 0.62,
+    "ltp": 940.5,
+    "changes": {
+      "15m": 0.1,
+      "30m": 0.25,
+      "1H": 0.4,
+      "1D": 0.56,
+      "1W": 1.1
+    },
+    "high": 949,
+    "low": 934,
+    "volume": "2.1M"
   },
   {
-    symbol: 'DRREDDY',
-    name: "Dr. Reddy's Laboratories",
-    sector: 'Health technology',
-    weight: 0.72,
-    ltp: 1245.00,
-    changes: { '15m': -0.14, '30m': -0.35, '1H': -0.68, '1D': -1.07, '1W': +0.50 },
-    high: 1265.00,
-    low: 1235.00,
-    volume: '1.5M'
+    "symbol": "BRITANNIA",
+    "name": "Britannia Industries",
+    "sector": "Consumer non durables",
+    "weight": 0.62,
+    "ltp": 4920,
+    "changes": {
+      "15m": 0.08,
+      "30m": 0.22,
+      "1H": 0.35,
+      "1D": 0.49,
+      "1W": 0.9
+    },
+    "high": 4960,
+    "low": 4895,
+    "volume": "0.9M"
   },
   {
-    symbol: 'CIPLA',
-    name: 'Cipla Ltd.',
-    sector: 'Health technology',
-    weight: 0.68,
-    ltp: 1515.00,
-    changes: { '15m': +0.08, '30m': +0.20, '1H': +0.38, '1D': +0.62, '1W': +1.90 },
-    high: 1530.00,
-    low: 1495.00,
-    volume: '2.2M'
+    "symbol": "TATASTEEL",
+    "name": "Tata Steel Ltd.",
+    "sector": "Non-energy minerals",
+    "weight": 1.24,
+    "ltp": 145.3,
+    "changes": {
+      "15m": 0.15,
+      "30m": 0.35,
+      "1H": 0.55,
+      "1D": 0.76,
+      "1W": 1.8
+    },
+    "high": 147.2,
+    "low": 144.1,
+    "volume": "32.0M"
   },
   {
-    symbol: 'MAXHEALTH',
-    name: 'Max Healthcare Institute',
-    sector: 'Health technology',
-    weight: 0.66,
-    ltp: 985.00,
-    changes: { '15m': +0.10, '30m': +0.25, '1H': +0.48, '1D': +0.79, '1W': +3.40 },
-    high: 998.00,
-    low: 972.00,
-    volume: '3.1M'
-  },
-
-  // 10. Industrial services (4.18%)
-  {
-    symbol: 'LT',
-    name: 'Larsen & Toubro Ltd.',
-    sector: 'Industrial services',
-    weight: 4.18,
-    ltp: 3520.00,
-    changes: { '15m': -0.35, '30m': -0.80, '1H': -1.60, '1D': -2.59, '1W': -1.10 },
-    high: 3625.00,
-    low: 3502.00,
-    volume: '3.4M'
-  },
-
-  // 11. Utilities (2.33%)
-  {
-    symbol: 'NTPC',
-    name: 'NTPC Ltd.',
-    sector: 'Utilities',
-    weight: 1.31,
-    ltp: 368.20,
-    changes: { '15m': -0.22, '30m': -0.60, '1H': -1.15, '1D': -1.88, '1W': -0.80 },
-    high: 376.00,
-    low: 365.00,
-    volume: '11.8M'
+    "symbol": "JSWSTEEL",
+    "name": "JSW Steel Ltd.",
+    "sector": "Non-energy minerals",
+    "weight": 1.05,
+    "ltp": 945,
+    "changes": {
+      "15m": -0.1,
+      "30m": -0.22,
+      "1H": -0.35,
+      "1D": -0.47,
+      "1W": 0.6
+    },
+    "high": 956,
+    "low": 940,
+    "volume": "3.1M"
   },
   {
-    symbol: 'POWERGRID',
-    name: 'Power Grid Corporation',
-    sector: 'Utilities',
-    weight: 1.02,
-    ltp: 318.50,
-    changes: { '15m': -0.18, '30m': -0.45, '1H': -0.92, '1D': -1.54, '1W': -0.60 },
-    high: 324.00,
-    low: 316.00,
-    volume: '9.2M'
+    "symbol": "ADANIENT",
+    "name": "Adani Enterprises Ltd.",
+    "sector": "Non-energy minerals",
+    "weight": 1.01,
+    "ltp": 2250,
+    "changes": {
+      "15m": 0.2,
+      "30m": 0.5,
+      "1H": 0.8,
+      "1D": 1.12,
+      "1W": 2.4
+    },
+    "high": 2280,
+    "low": 2235,
+    "volume": "3.8M"
   },
-
-  // 12. Electronic technology (1.23%)
   {
-    symbol: 'BEL',
-    name: 'Bharat Electronics Ltd.',
-    sector: 'Electronic technology',
-    weight: 1.23,
-    ltp: 288.40,
-    changes: { '15m': -0.18, '30m': -0.48, '1H': -0.95, '1D': -1.54, '1W': +1.10 },
-    high: 294.00,
-    low: 285.50,
-    volume: '13.2M'
+    "symbol": "HINDALCO",
+    "name": "Hindalco Industries Ltd.",
+    "sector": "Non-energy minerals",
+    "weight": 0.96,
+    "ltp": 650.4,
+    "changes": {
+      "15m": 0.18,
+      "30m": 0.4,
+      "1H": 0.62,
+      "1D": 0.87,
+      "1W": 1.95
+    },
+    "high": 658,
+    "low": 646,
+    "volume": "6.4M"
   },
-
-  // 13. Process industries (0.99%)
   {
-    symbol: 'ASIANPAINT',
-    name: 'Asian Paints Ltd.',
-    sector: 'Process industries',
-    weight: 0.99,
-    ltp: 2480.00,
-    changes: { '15m': -0.14, '30m': -0.35, '1H': -0.68, '1D': -1.07, '1W': -1.90 },
-    high: 2515.00,
-    low: 2465.00,
-    volume: '1.8M'
+    "symbol": "LT",
+    "name": "Larsen & Toubro Ltd.",
+    "sector": "Industrial services",
+    "weight": 3.93,
+    "ltp": 3580,
+    "changes": {
+      "15m": 0.15,
+      "30m": 0.38,
+      "1H": 0.58,
+      "1D": 0.79,
+      "1W": 1.5
+    },
+    "high": 3615,
+    "low": 3560,
+    "volume": "3.2M"
   },
-
-  // 14. Retail (0.91%)
   {
-    symbol: 'TRENT',
-    name: 'Trent Ltd.',
-    sector: 'Retail',
-    weight: 0.91,
-    ltp: 6350.00,
-    changes: { '15m': -0.20, '30m': -0.50, '1H': -0.95, '1D': -1.48, '1W': +1.80 },
-    high: 6480.00,
-    low: 6280.00,
-    volume: '1.6M'
+    "symbol": "BEL",
+    "name": "Bharat Electronics Ltd.",
+    "sector": "Industrial services",
+    "weight": 1.15,
+    "ltp": 285.5,
+    "changes": {
+      "15m": 0.25,
+      "30m": 0.55,
+      "1H": 0.88,
+      "1D": 1.21,
+      "1W": 3.1
+    },
+    "high": 289,
+    "low": 282.5,
+    "volume": "8.5M"
   },
-
-  // 15. Distribution services (0.78%)
   {
-    symbol: 'ADANIENT',
-    name: 'Adani Enterprises Ltd.',
-    sector: 'Distribution services',
-    weight: 0.78,
-    ltp: 2820.00,
-    changes: { '15m': -0.15, '30m': -0.38, '1H': -0.72, '1D': -1.15, '1W': +0.40 },
-    high: 2865.00,
-    low: 2795.00,
-    volume: '2.9M'
+    "symbol": "ADANIPORTS",
+    "name": "Adani Ports & SEZ Ltd.",
+    "sector": "Industrial services",
+    "weight": 1.01,
+    "ltp": 1180,
+    "changes": {
+      "15m": -0.12,
+      "30m": -0.3,
+      "1H": -0.48,
+      "1D": -0.67,
+      "1W": 0.8
+    },
+    "high": 1195,
+    "low": 1172,
+    "volume": "4.5M"
+  },
+  {
+    "symbol": "BHARTIARTL",
+    "name": "Bharti Airtel Ltd.",
+    "sector": "Communications",
+    "weight": 4.36,
+    "ltp": 1560,
+    "changes": {
+      "15m": 0.22,
+      "30m": 0.55,
+      "1H": 0.85,
+      "1D": 1.17,
+      "1W": 2.65
+    },
+    "high": 1575,
+    "low": 1548,
+    "volume": "6.8M"
+  },
+  {
+    "symbol": "SUNPHARMA",
+    "name": "Sun Pharmaceutical",
+    "sector": "Health technology",
+    "weight": 1.68,
+    "ltp": 1780,
+    "changes": {
+      "15m": 0.16,
+      "30m": 0.38,
+      "1H": 0.6,
+      "1D": 0.82,
+      "1W": 1.9
+    },
+    "high": 1795,
+    "low": 1770,
+    "volume": "3.1M"
+  },
+  {
+    "symbol": "CIPLA",
+    "name": "Cipla Ltd.",
+    "sector": "Health technology",
+    "weight": 0.77,
+    "ltp": 1480,
+    "changes": {
+      "15m": -0.08,
+      "30m": -0.18,
+      "1H": -0.28,
+      "1D": -0.4,
+      "1W": 0.5
+    },
+    "high": 1495,
+    "low": 1472,
+    "volume": "2.2M"
+  },
+  {
+    "symbol": "DRREDDY",
+    "name": "Dr. Reddy's Laboratories",
+    "sector": "Health technology",
+    "weight": 0.72,
+    "ltp": 1240,
+    "changes": {
+      "15m": 0.12,
+      "30m": 0.32,
+      "1H": 0.5,
+      "1D": 0.69,
+      "1W": 1.4
+    },
+    "high": 1255,
+    "low": 1232,
+    "volume": "1.4M"
+  },
+  {
+    "symbol": "APOLLOHOSP",
+    "name": "Apollo Hospitals",
+    "sector": "Health technology",
+    "weight": 0.67,
+    "ltp": 6950,
+    "changes": {
+      "15m": 0.12,
+      "30m": 0.3,
+      "1H": 0.48,
+      "1D": 0.65,
+      "1W": 1.6
+    },
+    "high": 7020,
+    "low": 6910,
+    "volume": "0.7M"
+  },
+  {
+    "symbol": "NTPC",
+    "name": "NTPC Ltd.",
+    "sector": "Utilities",
+    "weight": 1.48,
+    "ltp": 365.2,
+    "changes": {
+      "15m": 0.18,
+      "30m": 0.42,
+      "1H": 0.65,
+      "1D": 0.86,
+      "1W": 2.1
+    },
+    "high": 369,
+    "low": 362.5,
+    "volume": "9.4M"
+  },
+  {
+    "symbol": "POWERGRID",
+    "name": "Power Grid Corp.",
+    "sector": "Utilities",
+    "weight": 1.29,
+    "ltp": 320.4,
+    "changes": {
+      "15m": -0.1,
+      "30m": -0.22,
+      "1H": -0.35,
+      "1D": -0.47,
+      "1W": 0.7
+    },
+    "high": 324,
+    "low": 318,
+    "volume": "8.2M"
+  },
+  {
+    "symbol": "ULTRACEMCO",
+    "name": "UltraTech Cement",
+    "sector": "Process industries",
+    "weight": 1.2,
+    "ltp": 11400,
+    "changes": {
+      "15m": 0.15,
+      "30m": 0.35,
+      "1H": 0.55,
+      "1D": 0.75,
+      "1W": 1.6
+    },
+    "high": 11520,
+    "low": 11350,
+    "volume": "0.6M"
+  },
+  {
+    "symbol": "GRASIM",
+    "name": "Grasim Industries",
+    "sector": "Process industries",
+    "weight": 0.77,
+    "ltp": 2540,
+    "changes": {
+      "15m": -0.1,
+      "30m": -0.22,
+      "1H": -0.35,
+      "1D": -0.47,
+      "1W": -0.3
+    },
+    "high": 2565,
+    "low": 2525,
+    "volume": "1.2M"
+  },
+  {
+    "symbol": "TRENT",
+    "name": "Trent Ltd.",
+    "sector": "Retail",
+    "weight": 1.2,
+    "ltp": 6450,
+    "changes": {
+      "15m": 0.28,
+      "30m": 0.62,
+      "1H": 0.98,
+      "1D": 1.34,
+      "1W": 3.4
+    },
+    "high": 6520,
+    "low": 6390,
+    "volume": "1.8M"
   }
 ];
 

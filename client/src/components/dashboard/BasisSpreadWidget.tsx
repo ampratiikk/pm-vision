@@ -48,17 +48,6 @@ export const DEFAULT_PAIRS: BasisSpreadPair[] = [
     spread: 159.60,
     spreadPct: 0.64,
     annualizedYield: 7.18
-  },
-  {
-    id: 'nifty-gift',
-    name: 'Nifty ↔ Gift Nifty Fut #1',
-    leg1: 'NIFTY SPOT',
-    leg2: 'GIFT NIFTY #1',
-    price1: 24700.80,
-    price2: 24810.00,
-    spread: 109.20,
-    spreadPct: 0.44,
-    annualizedYield: 8.12
   }
 ];
 
