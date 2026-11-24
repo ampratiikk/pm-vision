@@ -115,6 +115,17 @@ export interface CandlestickChartProps {
    * Optional callback when user clicks or double-clicks on an indicator to open its settings.
    */
   onOpenIndicatorSettings?: (indicatorId?: string) => void;
+
+  /**
+   * Official Closing Auction Session (CAS) price for the active symbol.
+   * Rendered as an official reference line on small timeframe charts.
+   */
+  casPrice?: number;
+
+  /**
+   * Current active chart resolution/timeframe (e.g. '15m', '1D').
+   */
+  timeframe?: string;
 }
 
 export type IndicatorType = 'OR' | 'VWAP' | 'EMA' | 'SMA' | 'VOLUME';

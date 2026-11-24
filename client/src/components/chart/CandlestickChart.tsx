@@ -22,7 +22,8 @@ import {
   IPrimitivePaneView,
   IPrimitivePaneRenderer,
   CandlestickData,
-  Time
+  Time,
+  IPriceLine
 } from 'lightweight-charts';
 import { CandlestickChartProps, ChartImperativeHandle, IndicatorConfig } from './types';
 import {
@@ -266,7 +267,9 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
       className,
       onChartReady,
       onContextMenu,
-      onOpenIndicatorSettings
+      onOpenIndicatorSettings,
+      casPrice,
+      timeframe = '15m'
     },
     ref
   ) => {
@@ -275,6 +278,11 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
     const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
     const priceBoxRef = useRef<PriceBoxPrimitive | null>(null);
     const indicatorSeriesMapRef = useRef<Map<string, ISeriesApi<any>[]>>(new Map());
+    const casPriceLineRef = useRef<IPriceLine | null>(null);
+    const casPriceRef = useRef<number | undefined>(casPrice);
+    casPriceRef.current = casPrice;
+    const timeframeRef = useRef<string>(timeframe);
+    timeframeRef.current = timeframe;
 
     // Keep data array in ref for fast lookup during crosshair moves
     const currentDataRef = useRef<CandlestickData<Time>[]>(data || []);
@@ -284,6 +292,34 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
       const list = data || [];
       return computeOHLCInfo(list, list.length - 1);
     });
+
+    const syncCasPriceLine = (price?: number, tf?: string) => {
+      const series = seriesRef.current;
+      if (!series) return;
+
+      if (casPriceLineRef.current) {
+        try {
+          series.removePriceLine(casPriceLineRef.current);
+        } catch {}
+        casPriceLineRef.current = null;
+      }
+
+      if (price && price > 0 && tf !== '1D') {
+        try {
+          const line = series.createPriceLine({
+            price,
+            color: '#5F7A9A',
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: 'CAS'
+          });
+          casPriceLineRef.current = line;
+        } catch (e) {
+          console.warn('[CandlestickChart] Error creating CAS price line:', e);
+        }
+      }
+    };
 
     const syncIndicators = (candles: CandlestickData<Time>[], activeList: IndicatorConfig[]) => {
       const chart = chartRef.current;
@@ -526,6 +562,14 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
           try {
             const clean = sanitizeCandles(newData);
             if (clean.length === 0) return;
+            const currentCas = casPriceRef.current;
+            const currentTf = timeframeRef.current;
+            if (currentCas && currentCas > 0 && currentTf !== '1D') {
+              const last = clean[clean.length - 1];
+              last.close = currentCas;
+              last.high = Math.max(last.high, currentCas);
+              last.low = Math.min(last.low, currentCas);
+            }
             try {
               seriesRef.current?.setData(clean);
             } catch (err) {
@@ -538,6 +582,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
             }
             setOhlcInfo(computeOHLCInfo(clean, clean.length - 1));
             syncIndicators(clean, indicators);
+            syncCasPriceLine(currentCas, currentTf);
             try {
               chartRef.current?.timeScale().fitContent();
               chartRef.current?.timeScale().applyOptions({ rightOffset: 15 });
@@ -567,6 +612,27 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
     useEffect(() => {
       syncIndicators(currentDataRef.current, indicators);
     }, [indicators]);
+
+    // Sync CAS Price Line whenever casPrice or timeframe changes
+    useEffect(() => {
+      syncCasPriceLine(casPrice, timeframe);
+      if (casPrice && casPrice > 0 && timeframe !== '1D') {
+        const list = currentDataRef.current;
+        if (list.length > 0) {
+          const last = list[list.length - 1];
+          const updated: CandlestickData<Time> = {
+            ...last,
+            close: casPrice,
+            high: Math.max(last.high, casPrice),
+            low: Math.min(last.low, casPrice)
+          };
+          list[list.length - 1] = updated;
+          seriesRef.current?.update(updated);
+          priceBoxRef.current?.update(casPrice, casPrice >= updated.open);
+          setOhlcInfo(computeOHLCInfo(list, list.length - 1));
+        }
+      }
+    }, [casPrice, timeframe]);
 
     useEffect(() => {
       const container = containerRef.current;
@@ -622,6 +688,18 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
           fixLeftEdge: false,
           fixRightEdge: false
         },
+        handleScale: {
+          mouseWheel: true,
+          pinch: true,
+          axisPressedMouseMove: {
+            time: true,
+            price: true
+          },
+          axisDoubleClickReset: {
+            time: true,
+            price: true
+          }
+        },
         localization: {
           dateFormat: 'dd MMM yyyy'
         },
@@ -655,6 +733,12 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
       // Set initial data safely with unified numeric epoch timestamps
       const cleanInitial = sanitizeCandles(data);
       if (cleanInitial.length > 0) {
+        if (casPrice && casPrice > 0 && timeframe !== '1D') {
+          const last = cleanInitial[cleanInitial.length - 1];
+          last.close = casPrice;
+          last.high = Math.max(last.high, casPrice);
+          last.low = Math.min(last.low, casPrice);
+        }
         series.setData(cleanInitial);
         currentDataRef.current = cleanInitial;
         syncIndicators(cleanInitial, indicators);
@@ -665,7 +749,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
 
       // Attach custom price box primitive for dynamic positive/negative price box with #5F7A9A border
       const lastBar = cleanInitial.length > 0 ? cleanInitial[cleanInitial.length - 1] : null;
-      const initialPrice = lastBar ? lastBar.close : 0;
+      const initialPrice = lastBar ? lastBar.close : (casPrice || 0);
       const initialIsPositive = lastBar ? lastBar.close >= lastBar.open : true;
       const priceBoxPrimitive = new PriceBoxPrimitive(initialPrice, initialIsPositive);
       series.attachPrimitive(priceBoxPrimitive);
@@ -673,6 +757,9 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
 
       chartRef.current = chart;
       seriesRef.current = series;
+
+      // Sync official CAS price line on small timeframe charts
+      syncCasPriceLine(casPrice, timeframe);
 
       // Track crosshair move for dynamic OHLC display on whatever candle cursor is on
       const handleCrosshairMove = (param: MouseEventParams<Time>) => {
@@ -807,12 +894,71 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
         });
       }
 
+      // Y-axis Price Scale mouse wheel zooming (TradingView-style vertical scaling)
+      const handleWheel = (e: WheelEvent) => {
+        if (!chartRef.current) return;
+        const rect = container.getBoundingClientRect();
+        // The price scale (Y-axis) is aligned to the right edge of container
+        const rightScale = chartRef.current.priceScale('right');
+        const scaleWidth = rightScale.width() || 65;
+        const isOverYAxis = e.clientX >= rect.right - scaleWidth - 5;
+
+        if (isOverYAxis) {
+          e.preventDefault();
+          e.stopPropagation();
+
+          const range = rightScale.getVisibleRange();
+          if (!range) return;
+
+          const span = range.to - range.from;
+          if (span <= 0) return;
+
+          const mouseY = e.clientY - rect.top;
+          const ratio = Math.max(0.05, Math.min(0.95, mouseY / rect.height));
+          const focalPrice = range.to - ratio * span;
+
+          // Scroll up (negative delta) zooms in (compresses span, candles taller)
+          // Scroll down (positive delta) zooms out (expands span, candles shorter)
+          const zoomFactor = e.deltaY < 0 ? 0.88 : 1.14;
+
+          const newTo = focalPrice + (range.to - focalPrice) * zoomFactor;
+          const newFrom = focalPrice - (focalPrice - range.from) * zoomFactor;
+
+          if (newTo > newFrom) {
+            rightScale.setAutoScale(false);
+            rightScale.setVisibleRange({ from: newFrom, to: newTo });
+          }
+        }
+      };
+
+      const handleDblClick = (e: MouseEvent) => {
+        if (!chartRef.current) return;
+        const rect = container.getBoundingClientRect();
+        const rightScale = chartRef.current.priceScale('right');
+        const scaleWidth = rightScale.width() || 65;
+        if (e.clientX >= rect.right - scaleWidth - 5) {
+          rightScale.applyOptions({ autoScale: true });
+          rightScale.setAutoScale(true);
+        }
+      };
+
+      container.addEventListener('wheel', handleWheel, { passive: false });
+      container.addEventListener('dblclick', handleDblClick);
+
       // Cleanup on unmount
       return () => {
         resizeObserver.disconnect();
         container.removeEventListener('mouseleave', handleMouseLeave);
+        container.removeEventListener('wheel', handleWheel);
+        container.removeEventListener('dblclick', handleDblClick);
         chart.unsubscribeCrosshairMove(handleCrosshairMove);
         indicatorSeriesMapRef.current.clear();
+        if (casPriceLineRef.current && seriesRef.current) {
+          try {
+            seriesRef.current.removePriceLine(casPriceLineRef.current);
+          } catch {}
+          casPriceLineRef.current = null;
+        }
         chart.remove();
         chartRef.current = null;
         seriesRef.current = null;
@@ -826,6 +972,14 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
         if (seriesRef.current && data) {
           const clean = sanitizeCandles(data);
           if (clean.length > 0) {
+            const currentCas = casPriceRef.current;
+            const currentTf = timeframeRef.current;
+            if (currentCas && currentCas > 0 && currentTf !== '1D') {
+              const last = clean[clean.length - 1];
+              last.close = currentCas;
+              last.high = Math.max(last.high, currentCas);
+              last.low = Math.min(last.low, currentCas);
+            }
             try {
               seriesRef.current.setData(clean);
             } catch (err) {
@@ -838,6 +992,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
             }
             setOhlcInfo(computeOHLCInfo(clean, clean.length - 1));
             syncIndicators(clean, indicators);
+            syncCasPriceLine(currentCas, currentTf);
             try {
               chartRef.current?.timeScale().fitContent();
               chartRef.current?.timeScale().applyOptions({ rightOffset: 15 });

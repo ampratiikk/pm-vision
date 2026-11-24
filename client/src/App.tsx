@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   WebSocketMessage,
   SecurityQuote,
@@ -214,11 +214,33 @@ export function App() {
   const sidebarRef = useRef<HTMLDivElement>(null);
   const topSectionRef = useRef<HTMLDivElement>(null);
 
+  // Active symbol's official CAS / Closing price
+  const currentCasPrice = useMemo(() => {
+    if (activeChartSymbol === 'NIFTY 50') return spotPrice;
+    const sec = securities.find((s) => s.symbol.toUpperCase() === activeChartSymbol.toUpperCase());
+    if (sec && sec.ltp > 0) return sec.ltp;
+    const found = [...NIFTY_50_CONSTITUENTS, ...NIFTY_INDICES].find(
+      (i) => i.symbol.toUpperCase() === activeChartSymbol.toUpperCase()
+    );
+    return found?.basePrice || (activeChartSymbol === 'NIFTY 50' ? spotPrice : 0);
+  }, [activeChartSymbol, spotPrice, securities]);
+
   const loadHistory = useCallback(async (resolution: string, symbol: string = activeChartSymbol) => {
     setIsChartLoading(true);
     try {
       const candles = await fetchMarketHistory(resolution, symbol);
+      const sec = securities.find((s) => s.symbol.toUpperCase() === symbol.toUpperCase());
+      const casPrice = (sec && sec.ltp > 0)
+        ? sec.ltp
+        : (symbol === 'NIFTY 50' ? spotPrice : 0);
+
       if (candles && candles.length > 0) {
+        if (resolution !== '1D' && casPrice > 0) {
+          const last = candles[candles.length - 1];
+          last.close = casPrice;
+          last.high = Math.max(last.high, casPrice);
+          last.low = Math.min(last.low, casPrice);
+        }
         if (symbol === 'NIFTY 50') {
           baseHistoryRef.current = candles as any;
         }
@@ -240,6 +262,12 @@ export function App() {
           close: parseFloat((c.close * ratio).toFixed(2)),
           volume: (c as any).volume
         }));
+        if (resolution !== '1D' && casPrice > 0 && scaled.length > 0) {
+          const last = scaled[scaled.length - 1];
+          last.close = casPrice;
+          last.high = Math.max(last.high, casPrice);
+          last.low = Math.min(last.low, casPrice);
+        }
         setChartCandles(scaled as any);
         chartRef.current?.setData(scaled as any);
       }
@@ -248,7 +276,7 @@ export function App() {
     } finally {
       setIsChartLoading(false);
     }
-  }, [activeChartSymbol]);
+  }, [activeChartSymbol, spotPrice, securities]);
 
   const handleTimeframeChange = (tf: string) => {
     setActiveTimeFilter(tf);
@@ -694,6 +722,28 @@ export function App() {
                     }}>
                       {activeChartSymbolSector}
                     </span>
+                    {activeTimeFilter !== '1D' && currentCasPrice > 0 && (
+                      <div
+                        title="Official Closing Auction Session (CAS) Price"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          fontSize: '0.62rem',
+                          color: '#5F7A9A',
+                          backgroundColor: 'rgba(95, 122, 154, 0.12)',
+                          padding: '1px 6px',
+                          borderRadius: '2px',
+                          border: '1px solid rgba(95, 122, 154, 0.3)',
+                          fontWeight: 600
+                        }}
+                      >
+                        <span style={{ fontSize: '0.56rem', color: '#9ca3af' }}>CAS</span>
+                        <span style={{ color: '#ffffff' }}>
+                          {currentCasPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Pinned Timeframe Buttons */}
@@ -928,6 +978,8 @@ export function App() {
                 <CandlestickChart
                   ref={chartRef}
                   data={chartCandles}
+                  casPrice={currentCasPrice}
+                  timeframe={activeTimeFilter}
                   indicators={indicators}
                   height="100%"
                   style={{ height: '100%' }}
