@@ -22,8 +22,8 @@ export const NIFTY_50_CONSTITUENTS: Constituent[] = [
   {
     "symbol": "HDFCBANK",
     "name": "HDFC Bank Ltd.",
-    "sector": "Finance",
-    "weight": 10.72,
+    "sector": "Financial Services",
+    "weight": 10.54,
     "ltp": 1745,
     "changes": {
       "15m": 0.15,
@@ -39,8 +39,8 @@ export const NIFTY_50_CONSTITUENTS: Constituent[] = [
   {
     "symbol": "ICICIBANK",
     "name": "ICICI Bank Ltd.",
-    "sector": "Finance",
-    "weight": 8.76,
+    "sector": "Financial Services",
+    "weight": 8.81,
     "ltp": 1260.8,
     "changes": {
       "15m": -0.08,
@@ -54,27 +54,61 @@ export const NIFTY_50_CONSTITUENTS: Constituent[] = [
     "volume": "14.8M"
   },
   {
-    "symbol": "AXISBANK",
-    "name": "Axis Bank Ltd.",
-    "sector": "Finance",
-    "weight": 3.11,
-    "ltp": 1175.3,
+    "symbol": "RELIANCE",
+    "name": "Reliance Industries Ltd.",
+    "sector": "Oil, Gas & Consumable Fuels",
+    "weight": 7.52,
+    "ltp": 1265.6,
     "changes": {
-      "15m": 0.1,
-      "30m": 0.25,
-      "1H": 0.4,
-      "1D": 0.55,
-      "1W": -1.2
+      "15m": 0.2,
+      "30m": 0.48,
+      "1H": 0.75,
+      "1D": 1.02,
+      "1W": 2.1
     },
-    "high": 1191,
-    "low": 1168.4,
-    "volume": "8.2M"
+    "high": 1278,
+    "low": 1256.5,
+    "volume": "18.5M"
+  },
+  {
+    "symbol": "BHARTIARTL",
+    "name": "Bharti Airtel Ltd.",
+    "sector": "Telecommunication",
+    "weight": 5.12,
+    "ltp": 1560,
+    "changes": {
+      "15m": 0.22,
+      "30m": 0.55,
+      "1H": 0.85,
+      "1D": 1.17,
+      "1W": 2.65
+    },
+    "high": 1575,
+    "low": 1548,
+    "volume": "6.8M"
+  },
+  {
+    "symbol": "LT",
+    "name": "Larsen & Toubro Ltd.",
+    "sector": "Construction",
+    "weight": 4.17,
+    "ltp": 3580,
+    "changes": {
+      "15m": 0.15,
+      "30m": 0.38,
+      "1H": 0.58,
+      "1D": 0.79,
+      "1W": 1.5
+    },
+    "high": 3615,
+    "low": 3560,
+    "volume": "3.2M"
   },
   {
     "symbol": "SBIN",
     "name": "State Bank of India",
-    "sector": "Finance",
-    "weight": 2.82,
+    "sector": "Financial Services",
+    "weight": 3.79,
     "ltp": 815.4,
     "changes": {
       "15m": 0.2,
@@ -88,10 +122,44 @@ export const NIFTY_50_CONSTITUENTS: Constituent[] = [
     "volume": "16.5M"
   },
   {
+    "symbol": "INFY",
+    "name": "Infosys Ltd.",
+    "sector": "Information Technology",
+    "weight": 3.41,
+    "ltp": 1850.2,
+    "changes": {
+      "15m": 0.15,
+      "30m": 0.38,
+      "1H": 0.6,
+      "1D": 0.81,
+      "1W": 1.65
+    },
+    "high": 1865,
+    "low": 1838,
+    "volume": "12.4M"
+  },
+  {
+    "symbol": "AXISBANK",
+    "name": "Axis Bank Ltd.",
+    "sector": "Financial Services",
+    "weight": 3.32,
+    "ltp": 1175.3,
+    "changes": {
+      "15m": 0.1,
+      "30m": 0.25,
+      "1H": 0.4,
+      "1D": 0.55,
+      "1W": -1.2
+    },
+    "high": 1191,
+    "low": 1168.4,
+    "volume": "8.2M"
+  },
+  {
     "symbol": "KOTAKBANK",
-    "name": "Kotak Mahindra Bank",
-    "sector": "Finance",
-    "weight": 2.63,
+    "name": "Kotak Mahindra Bank Ltd.",
+    "sector": "Financial Services",
+    "weight": 2.84,
     "ltp": 1785.9,
     "changes": {
       "15m": -0.12,
@@ -107,8 +175,8 @@ export const NIFTY_50_CONSTITUENTS: Constituent[] = [
   {
     "symbol": "BAJFINANCE",
     "name": "Bajaj Finance Ltd.",
-    "sector": "Finance",
-    "weight": 2.01,
+    "sector": "Financial Services",
+    "weight": 2.53,
     "ltp": 6850,
     "changes": {
       "15m": 0.12,
@@ -122,248 +190,10 @@ export const NIFTY_50_CONSTITUENTS: Constituent[] = [
     "volume": "2.3M"
   },
   {
-    "symbol": "BAJAJFINSV",
-    "name": "Bajaj Finserv Ltd.",
-    "sector": "Finance",
-    "weight": 1.05,
-    "ltp": 1620.5,
-    "changes": {
-      "15m": 0.15,
-      "30m": 0.35,
-      "1H": 0.55,
-      "1D": 0.76,
-      "1W": 0.9
-    },
-    "high": 1635,
-    "low": 1610,
-    "volume": "1.9M"
-  },
-  {
-    "symbol": "INDUSINDBK",
-    "name": "IndusInd Bank Ltd.",
-    "sector": "Finance",
-    "weight": 0.91,
-    "ltp": 1020.4,
-    "changes": {
-      "15m": -0.15,
-      "30m": -0.35,
-      "1H": -0.55,
-      "1D": -0.73,
-      "1W": -2.1
-    },
-    "high": 1035,
-    "low": 1012,
-    "volume": "3.4M"
-  },
-  {
-    "symbol": "SHRIRAMFIN",
-    "name": "Shriram Finance Ltd.",
-    "sector": "Finance",
-    "weight": 0.91,
-    "ltp": 3050.2,
-    "changes": {
-      "15m": 0.18,
-      "30m": 0.42,
-      "1H": 0.68,
-      "1D": 0.94,
-      "1W": 2.15
-    },
-    "high": 3085,
-    "low": 3020,
-    "volume": "1.8M"
-  },
-  {
-    "symbol": "HDFCLIFE",
-    "name": "HDFC Life Insurance",
-    "sector": "Finance",
-    "weight": 0.57,
-    "ltp": 695.4,
-    "changes": {
-      "15m": -0.05,
-      "30m": -0.12,
-      "1H": -0.2,
-      "1D": -0.3,
-      "1W": 0.4
-    },
-    "high": 704,
-    "low": 690.5,
-    "volume": "2.8M"
-  },
-  {
-    "symbol": "SBILIFE",
-    "name": "SBI Life Insurance",
-    "sector": "Finance",
-    "weight": 0.53,
-    "ltp": 1480,
-    "changes": {
-      "15m": 0.1,
-      "30m": 0.28,
-      "1H": 0.45,
-      "1D": 0.64,
-      "1W": 1.1
-    },
-    "high": 1495,
-    "low": 1472,
-    "volume": "1.6M"
-  },
-  {
-    "symbol": "INFY",
-    "name": "Infosys Ltd.",
-    "sector": "Technology services",
-    "weight": 5.41,
-    "ltp": 1850.2,
-    "changes": {
-      "15m": 0.15,
-      "30m": 0.38,
-      "1H": 0.6,
-      "1D": 0.81,
-      "1W": 1.65
-    },
-    "high": 1865,
-    "low": 1838,
-    "volume": "12.4M"
-  },
-  {
-    "symbol": "TCS",
-    "name": "Tata Consultancy Services",
-    "sector": "Technology services",
-    "weight": 3.78,
-    "ltp": 4120.5,
-    "changes": {
-      "15m": -0.08,
-      "30m": -0.2,
-      "1H": -0.32,
-      "1D": -0.44,
-      "1W": 0.6
-    },
-    "high": 4160,
-    "low": 4105,
-    "volume": "3.6M"
-  },
-  {
-    "symbol": "HCLTECH",
-    "name": "HCL Technologies Ltd.",
-    "sector": "Technology services",
-    "weight": 1.53,
-    "ltp": 1820.8,
-    "changes": {
-      "15m": 0.25,
-      "30m": 0.58,
-      "1H": 0.92,
-      "1D": 1.25,
-      "1W": 2.8
-    },
-    "high": 1835,
-    "low": 1802,
-    "volume": "3.8M"
-  },
-  {
-    "symbol": "TECHM",
-    "name": "Tech Mahindra Ltd.",
-    "sector": "Technology services",
-    "weight": 0.81,
-    "ltp": 1680,
-    "changes": {
-      "15m": 0.12,
-      "30m": 0.32,
-      "1H": 0.5,
-      "1D": 0.69,
-      "1W": 1.2
-    },
-    "high": 1695,
-    "low": 1670,
-    "volume": "2.5M"
-  },
-  {
-    "symbol": "WIPRO",
-    "name": "Wipro Ltd.",
-    "sector": "Technology services",
-    "weight": 0.72,
-    "ltp": 565.4,
-    "changes": {
-      "15m": -0.1,
-      "30m": -0.25,
-      "1H": -0.4,
-      "1D": -0.56,
-      "1W": -0.3
-    },
-    "high": 572,
-    "low": 561,
-    "volume": "4.2M"
-  },
-  {
-    "symbol": "RELIANCE",
-    "name": "Reliance Industries Ltd.",
-    "sector": "Energy minerals",
-    "weight": 7.9,
-    "ltp": 1265.6,
-    "changes": {
-      "15m": 0.2,
-      "30m": 0.48,
-      "1H": 0.75,
-      "1D": 1.02,
-      "1W": 2.1
-    },
-    "high": 1278,
-    "low": 1256.5,
-    "volume": "18.5M"
-  },
-  {
-    "symbol": "ONGC",
-    "name": "Oil & Natural Gas Corp.",
-    "sector": "Energy minerals",
-    "weight": 1.15,
-    "ltp": 250.2,
-    "changes": {
-      "15m": 0.15,
-      "30m": 0.38,
-      "1H": 0.6,
-      "1D": 0.85,
-      "1W": 1.45
-    },
-    "high": 253.4,
-    "low": 247.8,
-    "volume": "8.9M"
-  },
-  {
-    "symbol": "COALINDIA",
-    "name": "Coal India Ltd.",
-    "sector": "Energy minerals",
-    "weight": 1.1,
-    "ltp": 410.5,
-    "changes": {
-      "15m": -0.08,
-      "30m": -0.2,
-      "1H": -0.32,
-      "1D": -0.44,
-      "1W": 0.8
-    },
-    "high": 416,
-    "low": 407.2,
-    "volume": "7.1M"
-  },
-  {
-    "symbol": "BPCL",
-    "name": "Bharat Petroleum Corp.",
-    "sector": "Energy minerals",
-    "weight": 0.57,
-    "ltp": 295.4,
-    "changes": {
-      "15m": 0.22,
-      "30m": 0.5,
-      "1H": 0.8,
-      "1D": 1.1,
-      "1W": 2.25
-    },
-    "high": 299,
-    "low": 292.1,
-    "volume": "5.2M"
-  },
-  {
     "symbol": "M&M",
-    "name": "Mahindra & Mahindra",
-    "sector": "Consumer durables",
-    "weight": 2.44,
+    "name": "Mahindra & Mahindra Ltd.",
+    "sector": "Automobile and Auto Components",
+    "weight": 2.51,
     "ltp": 2950.4,
     "changes": {
       "15m": 0.25,
@@ -377,129 +207,10 @@ export const NIFTY_50_CONSTITUENTS: Constituent[] = [
     "volume": "4.8M"
   },
   {
-    "symbol": "MARUTI",
-    "name": "Maruti Suzuki India",
-    "sector": "Consumer durables",
-    "weight": 1.77,
-    "ltp": 11200,
-    "changes": {
-      "15m": -0.08,
-      "30m": -0.18,
-      "1H": -0.28,
-      "1D": -0.4,
-      "1W": 1.1
-    },
-    "high": 11350,
-    "low": 11150,
-    "volume": "0.8M"
-  },
-  {
-    "symbol": "TATAMOTORS",
-    "name": "Tata Motors Ltd.",
-    "sector": "Consumer durables",
-    "weight": 1.58,
-    "ltp": 785.6,
-    "changes": {
-      "15m": -0.2,
-      "30m": -0.5,
-      "1H": -0.8,
-      "1D": -1.06,
-      "1W": -1.85
-    },
-    "high": 798,
-    "low": 781.2,
-    "volume": "11.5M"
-  },
-  {
-    "symbol": "TITAN",
-    "name": "Titan Company Ltd.",
-    "sector": "Consumer durables",
-    "weight": 1.44,
-    "ltp": 3240,
-    "changes": {
-      "15m": 0.12,
-      "30m": 0.3,
-      "1H": 0.48,
-      "1D": 0.68,
-      "1W": 1.5
-    },
-    "high": 3270,
-    "low": 3220,
-    "volume": "1.4M"
-  },
-  {
-    "symbol": "ASIANPAINT",
-    "name": "Asian Paints Ltd.",
-    "sector": "Consumer durables",
-    "weight": 1.1,
-    "ltp": 2480,
-    "changes": {
-      "15m": -0.12,
-      "30m": -0.28,
-      "1H": -0.44,
-      "1D": -0.6,
-      "1W": -0.75
-    },
-    "high": 2510,
-    "low": 2465,
-    "volume": "1.9M"
-  },
-  {
-    "symbol": "BAJAJ-AUTO",
-    "name": "Bajaj Auto Ltd.",
-    "sector": "Consumer durables",
-    "weight": 0.86,
-    "ltp": 9450,
-    "changes": {
-      "15m": 0.12,
-      "30m": 0.3,
-      "1H": 0.48,
-      "1D": 0.66,
-      "1W": 1.2
-    },
-    "high": 9550,
-    "low": 9400,
-    "volume": "0.7M"
-  },
-  {
-    "symbol": "EICHERMOT",
-    "name": "Eicher Motors Ltd.",
-    "sector": "Consumer durables",
-    "weight": 0.67,
-    "ltp": 4820,
-    "changes": {
-      "15m": 0.14,
-      "30m": 0.35,
-      "1H": 0.52,
-      "1D": 0.73,
-      "1W": 2.3
-    },
-    "high": 4865,
-    "low": 4790,
-    "volume": "0.9M"
-  },
-  {
-    "symbol": "HEROMOTOCO",
-    "name": "Hero MotoCorp Ltd.",
-    "sector": "Consumer durables",
-    "weight": 0.57,
-    "ltp": 4650,
-    "changes": {
-      "15m": -0.08,
-      "30m": -0.18,
-      "1H": -0.28,
-      "1D": -0.39,
-      "1W": 0.45
-    },
-    "high": 4710,
-    "low": 4625,
-    "volume": "0.6M"
-  },
-  {
     "symbol": "ITC",
     "name": "ITC Ltd.",
-    "sector": "Consumer non durables",
-    "weight": 3.69,
+    "sector": "Fast Moving Consumer Goods",
+    "weight": 2.43,
     "ltp": 465.2,
     "changes": {
       "15m": 0.1,
@@ -513,214 +224,44 @@ export const NIFTY_50_CONSTITUENTS: Constituent[] = [
     "volume": "14.2M"
   },
   {
-    "symbol": "HINDUNILVR",
-    "name": "Hindustan Unilever Ltd.",
-    "sector": "Consumer non durables",
-    "weight": 2.35,
-    "ltp": 2380,
-    "changes": {
-      "15m": -0.1,
-      "30m": -0.25,
-      "1H": -0.38,
-      "1D": -0.52,
-      "1W": -0.8
-    },
-    "high": 2405,
-    "low": 2372,
-    "volume": "2.8M"
-  },
-  {
-    "symbol": "NESTLEIND",
-    "name": "Nestle India Ltd.",
-    "sector": "Consumer non durables",
-    "weight": 0.81,
-    "ltp": 2240,
-    "changes": {
-      "15m": -0.06,
-      "30m": -0.16,
-      "1H": -0.25,
-      "1D": -0.36,
-      "1W": 0.2
-    },
-    "high": 2260,
-    "low": 2230,
-    "volume": "0.8M"
-  },
-  {
-    "symbol": "TATACONSUM",
-    "name": "Tata Consumer Products",
-    "sector": "Consumer non durables",
-    "weight": 0.62,
-    "ltp": 940.5,
-    "changes": {
-      "15m": 0.1,
-      "30m": 0.25,
-      "1H": 0.4,
-      "1D": 0.56,
-      "1W": 1.1
-    },
-    "high": 949,
-    "low": 934,
-    "volume": "2.1M"
-  },
-  {
-    "symbol": "BRITANNIA",
-    "name": "Britannia Industries",
-    "sector": "Consumer non durables",
-    "weight": 0.62,
-    "ltp": 4920,
-    "changes": {
-      "15m": 0.08,
-      "30m": 0.22,
-      "1H": 0.35,
-      "1D": 0.49,
-      "1W": 0.9
-    },
-    "high": 4960,
-    "low": 4895,
-    "volume": "0.9M"
-  },
-  {
-    "symbol": "TATASTEEL",
-    "name": "Tata Steel Ltd.",
-    "sector": "Non-energy minerals",
-    "weight": 1.24,
-    "ltp": 145.3,
-    "changes": {
-      "15m": 0.15,
-      "30m": 0.35,
-      "1H": 0.55,
-      "1D": 0.76,
-      "1W": 1.8
-    },
-    "high": 147.2,
-    "low": 144.1,
-    "volume": "32.0M"
-  },
-  {
-    "symbol": "JSWSTEEL",
-    "name": "JSW Steel Ltd.",
-    "sector": "Non-energy minerals",
-    "weight": 1.05,
-    "ltp": 945,
+    "symbol": "ETERNAL",
+    "name": "Eternal Ltd.",
+    "sector": "Consumer Services",
+    "weight": 2.26,
+    "ltp": 268.4,
     "changes": {
       "15m": -0.1,
       "30m": -0.22,
-      "1H": -0.35,
-      "1D": -0.47,
-      "1W": 0.6
-    },
-    "high": 956,
-    "low": 940,
-    "volume": "3.1M"
-  },
-  {
-    "symbol": "ADANIENT",
-    "name": "Adani Enterprises Ltd.",
-    "sector": "Non-energy minerals",
-    "weight": 1.01,
-    "ltp": 2250,
-    "changes": {
-      "15m": 0.2,
-      "30m": 0.5,
-      "1H": 0.8,
-      "1D": 1.12,
-      "1W": 2.4
-    },
-    "high": 2280,
-    "low": 2235,
-    "volume": "3.8M"
-  },
-  {
-    "symbol": "HINDALCO",
-    "name": "Hindalco Industries Ltd.",
-    "sector": "Non-energy minerals",
-    "weight": 0.96,
-    "ltp": 650.4,
-    "changes": {
-      "15m": 0.18,
-      "30m": 0.4,
-      "1H": 0.62,
-      "1D": 0.87,
-      "1W": 1.95
-    },
-    "high": 658,
-    "low": 646,
-    "volume": "6.4M"
-  },
-  {
-    "symbol": "LT",
-    "name": "Larsen & Toubro Ltd.",
-    "sector": "Industrial services",
-    "weight": 3.93,
-    "ltp": 3580,
-    "changes": {
-      "15m": 0.15,
-      "30m": 0.38,
-      "1H": 0.58,
-      "1D": 0.79,
-      "1W": 1.5
-    },
-    "high": 3615,
-    "low": 3560,
-    "volume": "3.2M"
-  },
-  {
-    "symbol": "BEL",
-    "name": "Bharat Electronics Ltd.",
-    "sector": "Industrial services",
-    "weight": 1.15,
-    "ltp": 285.5,
-    "changes": {
-      "15m": 0.25,
-      "30m": 0.55,
-      "1H": 0.88,
-      "1D": 1.21,
+      "1H": -0.4,
+      "1D": -0.52,
       "1W": 3.1
     },
-    "high": 289,
-    "low": 282.5,
-    "volume": "8.5M"
+    "high": 275,
+    "low": 264,
+    "volume": "45.0M"
   },
   {
-    "symbol": "ADANIPORTS",
-    "name": "Adani Ports & SEZ Ltd.",
-    "sector": "Industrial services",
-    "weight": 1.01,
-    "ltp": 1180,
+    "symbol": "TCS",
+    "name": "Tata Consultancy Services Ltd.",
+    "sector": "Information Technology",
+    "weight": 1.97,
+    "ltp": 4120.5,
     "changes": {
-      "15m": -0.12,
-      "30m": -0.3,
-      "1H": -0.48,
-      "1D": -0.67,
-      "1W": 0.8
+      "15m": -0.08,
+      "30m": -0.2,
+      "1H": -0.32,
+      "1D": -0.44,
+      "1W": 0.6
     },
-    "high": 1195,
-    "low": 1172,
-    "volume": "4.5M"
-  },
-  {
-    "symbol": "BHARTIARTL",
-    "name": "Bharti Airtel Ltd.",
-    "sector": "Communications",
-    "weight": 4.36,
-    "ltp": 1560,
-    "changes": {
-      "15m": 0.22,
-      "30m": 0.55,
-      "1H": 0.85,
-      "1D": 1.17,
-      "1W": 2.65
-    },
-    "high": 1575,
-    "low": 1548,
-    "volume": "6.8M"
+    "high": 4160,
+    "low": 4105,
+    "volume": "3.6M"
   },
   {
     "symbol": "SUNPHARMA",
-    "name": "Sun Pharmaceutical",
-    "sector": "Health technology",
-    "weight": 1.68,
+    "name": "Sun Pharmaceutical Industries Ltd.",
+    "sector": "Healthcare",
+    "weight": 1.88,
     "ltp": 1780,
     "changes": {
       "15m": 0.16,
@@ -734,10 +275,486 @@ export const NIFTY_50_CONSTITUENTS: Constituent[] = [
     "volume": "3.1M"
   },
   {
+    "symbol": "TITAN",
+    "name": "Titan Company Ltd.",
+    "sector": "Consumer Durables",
+    "weight": 1.84,
+    "ltp": 3240,
+    "changes": {
+      "15m": 0.12,
+      "30m": 0.3,
+      "1H": 0.48,
+      "1D": 0.68,
+      "1W": 1.5
+    },
+    "high": 3270,
+    "low": 3220,
+    "volume": "1.4M"
+  },
+  {
+    "symbol": "HINDUNILVR",
+    "name": "Hindustan Unilever Ltd.",
+    "sector": "Fast Moving Consumer Goods",
+    "weight": 1.57,
+    "ltp": 2380,
+    "changes": {
+      "15m": -0.1,
+      "30m": -0.25,
+      "1H": -0.38,
+      "1D": -0.52,
+      "1W": -0.8
+    },
+    "high": 2405,
+    "low": 2372,
+    "volume": "2.8M"
+  },
+  {
+    "symbol": "TATASTEEL",
+    "name": "Tata Steel Ltd.",
+    "sector": "Metals & Mining",
+    "weight": 1.48,
+    "ltp": 145.3,
+    "changes": {
+      "15m": 0.15,
+      "30m": 0.35,
+      "1H": 0.55,
+      "1D": 0.76,
+      "1W": 1.8
+    },
+    "high": 147.2,
+    "low": 144.1,
+    "volume": "32.0M"
+  },
+  {
+    "symbol": "MARUTI",
+    "name": "Maruti Suzuki India Ltd.",
+    "sector": "Automobile and Auto Components",
+    "weight": 1.47,
+    "ltp": 11200,
+    "changes": {
+      "15m": -0.08,
+      "30m": -0.18,
+      "1H": -0.28,
+      "1D": -0.4,
+      "1W": 1.1
+    },
+    "high": 11350,
+    "low": 11150,
+    "volume": "0.8M"
+  },
+  {
+    "symbol": "NTPC",
+    "name": "NTPC Ltd.",
+    "sector": "Power",
+    "weight": 1.46,
+    "ltp": 365.2,
+    "changes": {
+      "15m": 0.18,
+      "30m": 0.42,
+      "1H": 0.65,
+      "1D": 0.86,
+      "1W": 2.1
+    },
+    "high": 369,
+    "low": 362.5,
+    "volume": "9.4M"
+  },
+  {
+    "symbol": "ADANIPORTS",
+    "name": "Adani Ports and Special Economic Zone Ltd.",
+    "sector": "Services",
+    "weight": 1.36,
+    "ltp": 1180,
+    "changes": {
+      "15m": -0.12,
+      "30m": -0.3,
+      "1H": -0.48,
+      "1D": -0.67,
+      "1W": 0.8
+    },
+    "high": 1195,
+    "low": 1172,
+    "volume": "4.5M"
+  },
+  {
+    "symbol": "BEL",
+    "name": "Bharat Electronics Ltd.",
+    "sector": "Capital Goods",
+    "weight": 1.32,
+    "ltp": 285.5,
+    "changes": {
+      "15m": 0.25,
+      "30m": 0.55,
+      "1H": 0.88,
+      "1D": 1.21,
+      "1W": 3.1
+    },
+    "high": 289,
+    "low": 282.5,
+    "volume": "8.5M"
+  },
+  {
+    "symbol": "HINDALCO",
+    "name": "Hindalco Industries Ltd.",
+    "sector": "Metals & Mining",
+    "weight": 1.32,
+    "ltp": 650.4,
+    "changes": {
+      "15m": 0.18,
+      "30m": 0.4,
+      "1H": 0.62,
+      "1D": 0.87,
+      "1W": 1.95
+    },
+    "high": 658,
+    "low": 646,
+    "volume": "6.4M"
+  },
+  {
+    "symbol": "SHRIRAMFIN",
+    "name": "Shriram Finance Ltd.",
+    "sector": "Financial Services",
+    "weight": 1.29,
+    "ltp": 3050.2,
+    "changes": {
+      "15m": 0.18,
+      "30m": 0.42,
+      "1H": 0.68,
+      "1D": 0.94,
+      "1W": 2.15
+    },
+    "high": 3085,
+    "low": 3020,
+    "volume": "1.8M"
+  },
+  {
+    "symbol": "BSE",
+    "name": "BSE Ltd.",
+    "sector": "Financial Services",
+    "weight": 1.24,
+    "ltp": 4680,
+    "changes": {
+      "15m": -0.08,
+      "30m": -0.25,
+      "1H": -0.42,
+      "1D": -0.63,
+      "1W": 3.8
+    },
+    "high": 4740,
+    "low": 4620,
+    "volume": "3.2M"
+  },
+  {
+    "symbol": "HCLTECH",
+    "name": "HCL Technologies Ltd.",
+    "sector": "Information Technology",
+    "weight": 1.22,
+    "ltp": 1820.8,
+    "changes": {
+      "15m": 0.25,
+      "30m": 0.58,
+      "1H": 0.92,
+      "1D": 1.25,
+      "1W": 2.8
+    },
+    "high": 1835,
+    "low": 1802,
+    "volume": "3.8M"
+  },
+  {
+    "symbol": "ULTRACEMCO",
+    "name": "UltraTech Cement Ltd.",
+    "sector": "Construction Materials",
+    "weight": 1.22,
+    "ltp": 11400,
+    "changes": {
+      "15m": 0.15,
+      "30m": 0.35,
+      "1H": 0.55,
+      "1D": 0.75,
+      "1W": 1.6
+    },
+    "high": 11520,
+    "low": 11350,
+    "volume": "0.6M"
+  },
+  {
+    "symbol": "JSWSTEEL",
+    "name": "JSW Steel Ltd.",
+    "sector": "Metals & Mining",
+    "weight": 1.17,
+    "ltp": 945,
+    "changes": {
+      "15m": -0.1,
+      "30m": -0.22,
+      "1H": -0.35,
+      "1D": -0.47,
+      "1W": 0.6
+    },
+    "high": 956,
+    "low": 940,
+    "volume": "3.1M"
+  },
+  {
+    "symbol": "POWERGRID",
+    "name": "Power Grid Corporation of India Ltd.",
+    "sector": "Power",
+    "weight": 1.13,
+    "ltp": 320.4,
+    "changes": {
+      "15m": -0.1,
+      "30m": -0.22,
+      "1H": -0.35,
+      "1D": -0.47,
+      "1W": 0.7
+    },
+    "high": 324,
+    "low": 318,
+    "volume": "8.2M"
+  },
+  {
+    "symbol": "BAJAJ-AUTO",
+    "name": "Bajaj Auto Ltd.",
+    "sector": "Automobile and Auto Components",
+    "weight": 1.12,
+    "ltp": 9450,
+    "changes": {
+      "15m": 0.12,
+      "30m": 0.3,
+      "1H": 0.48,
+      "1D": 0.66,
+      "1W": 1.2
+    },
+    "high": 9550,
+    "low": 9400,
+    "volume": "0.7M"
+  },
+  {
+    "symbol": "GRASIM",
+    "name": "Grasim Industries Ltd.",
+    "sector": "Construction Materials",
+    "weight": 1.11,
+    "ltp": 2540,
+    "changes": {
+      "15m": -0.1,
+      "30m": -0.22,
+      "1H": -0.35,
+      "1D": -0.47,
+      "1W": -0.3
+    },
+    "high": 2565,
+    "low": 2525,
+    "volume": "1.2M"
+  },
+  {
+    "symbol": "INDIGO",
+    "name": "InterGlobe Aviation Ltd.",
+    "sector": "Services",
+    "weight": 1.05,
+    "ltp": 4180,
+    "changes": {
+      "15m": -0.15,
+      "30m": -0.4,
+      "1H": -0.75,
+      "1D": -1.16,
+      "1W": 0.9
+    },
+    "high": 4220,
+    "low": 4130,
+    "volume": "1.5M"
+  },
+  {
+    "symbol": "ASIANPAINT",
+    "name": "Asian Paints Ltd.",
+    "sector": "Consumer Durables",
+    "weight": 1.04,
+    "ltp": 2480,
+    "changes": {
+      "15m": -0.12,
+      "30m": -0.28,
+      "1H": -0.44,
+      "1D": -0.6,
+      "1W": -0.75
+    },
+    "high": 2510,
+    "low": 2465,
+    "volume": "1.9M"
+  },
+  {
+    "symbol": "COALINDIA",
+    "name": "Coal India Ltd.",
+    "sector": "Oil, Gas & Consumable Fuels",
+    "weight": 0.97,
+    "ltp": 410.5,
+    "changes": {
+      "15m": -0.08,
+      "30m": -0.2,
+      "1H": -0.32,
+      "1D": -0.44,
+      "1W": 0.8
+    },
+    "high": 416,
+    "low": 407.2,
+    "volume": "7.1M"
+  },
+  {
+    "symbol": "BAJAJFINSV",
+    "name": "Bajaj Finserv Ltd.",
+    "sector": "Financial Services",
+    "weight": 0.96,
+    "ltp": 1620.5,
+    "changes": {
+      "15m": 0.15,
+      "30m": 0.35,
+      "1H": 0.55,
+      "1D": 0.76,
+      "1W": 0.9
+    },
+    "high": 1635,
+    "low": 1610,
+    "volume": "1.9M"
+  },
+  {
+    "symbol": "ADANIENT",
+    "name": "Adani Enterprises Ltd.",
+    "sector": "Metals & Mining",
+    "weight": 0.96,
+    "ltp": 2250,
+    "changes": {
+      "15m": 0.2,
+      "30m": 0.5,
+      "1H": 0.8,
+      "1D": 1.12,
+      "1W": 2.4
+    },
+    "high": 2280,
+    "low": 2235,
+    "volume": "3.8M"
+  },
+  {
+    "symbol": "EICHERMOT",
+    "name": "Eicher Motors Ltd.",
+    "sector": "Automobile and Auto Components",
+    "weight": 0.94,
+    "ltp": 4820,
+    "changes": {
+      "15m": 0.14,
+      "30m": 0.35,
+      "1H": 0.52,
+      "1D": 0.73,
+      "1W": 2.3
+    },
+    "high": 4865,
+    "low": 4790,
+    "volume": "0.9M"
+  },
+  {
+    "symbol": "NESTLEIND",
+    "name": "Nestle India Ltd.",
+    "sector": "Fast Moving Consumer Goods",
+    "weight": 0.92,
+    "ltp": 2240,
+    "changes": {
+      "15m": -0.06,
+      "30m": -0.16,
+      "1H": -0.25,
+      "1D": -0.36,
+      "1W": 0.2
+    },
+    "high": 2260,
+    "low": 2230,
+    "volume": "0.8M"
+  },
+  {
+    "symbol": "TECHM",
+    "name": "Tech Mahindra Ltd.",
+    "sector": "Information Technology",
+    "weight": 0.91,
+    "ltp": 1680,
+    "changes": {
+      "15m": 0.12,
+      "30m": 0.32,
+      "1H": 0.5,
+      "1D": 0.69,
+      "1W": 1.2
+    },
+    "high": 1695,
+    "low": 1670,
+    "volume": "2.5M"
+  },
+  {
+    "symbol": "ONGC",
+    "name": "Oil & Natural Gas Corporation Ltd.",
+    "sector": "Oil, Gas & Consumable Fuels",
+    "weight": 0.85,
+    "ltp": 250.2,
+    "changes": {
+      "15m": 0.15,
+      "30m": 0.38,
+      "1H": 0.6,
+      "1D": 0.85,
+      "1W": 1.45
+    },
+    "high": 253.4,
+    "low": 247.8,
+    "volume": "8.9M"
+  },
+  {
+    "symbol": "APOLLOHOSP",
+    "name": "Apollo Hospitals Enterprise Ltd.",
+    "sector": "Healthcare",
+    "weight": 0.85,
+    "ltp": 6950,
+    "changes": {
+      "15m": 0.12,
+      "30m": 0.3,
+      "1H": 0.48,
+      "1D": 0.65,
+      "1W": 1.6
+    },
+    "high": 7020,
+    "low": 6910,
+    "volume": "0.7M"
+  },
+  {
+    "symbol": "TRENT",
+    "name": "Trent Ltd.",
+    "sector": "Consumer Services",
+    "weight": 0.83,
+    "ltp": 6450,
+    "changes": {
+      "15m": 0.28,
+      "30m": 0.62,
+      "1H": 0.98,
+      "1D": 1.34,
+      "1W": 3.4
+    },
+    "high": 6520,
+    "low": 6390,
+    "volume": "1.8M"
+  },
+  {
+    "symbol": "SBILIFE",
+    "name": "SBI Life Insurance Company Ltd.",
+    "sector": "Financial Services",
+    "weight": 0.74,
+    "ltp": 1480,
+    "changes": {
+      "15m": 0.1,
+      "30m": 0.28,
+      "1H": 0.45,
+      "1D": 0.64,
+      "1W": 1.1
+    },
+    "high": 1495,
+    "low": 1472,
+    "volume": "1.6M"
+  },
+  {
     "symbol": "CIPLA",
     "name": "Cipla Ltd.",
-    "sector": "Health technology",
-    "weight": 0.77,
+    "sector": "Healthcare",
+    "weight": 0.74,
     "ltp": 1480,
     "changes": {
       "15m": -0.08,
@@ -752,9 +769,9 @@ export const NIFTY_50_CONSTITUENTS: Constituent[] = [
   },
   {
     "symbol": "DRREDDY",
-    "name": "Dr. Reddy's Laboratories",
-    "sector": "Health technology",
-    "weight": 0.72,
+    "name": "Dr. Reddy's Laboratories Ltd.",
+    "sector": "Healthcare",
+    "weight": 0.73,
     "ltp": 1240,
     "changes": {
       "15m": 0.12,
@@ -768,106 +785,89 @@ export const NIFTY_50_CONSTITUENTS: Constituent[] = [
     "volume": "1.4M"
   },
   {
-    "symbol": "APOLLOHOSP",
-    "name": "Apollo Hospitals",
-    "sector": "Health technology",
-    "weight": 0.67,
-    "ltp": 6950,
+    "symbol": "MAXHEALTH",
+    "name": "Max Healthcare Institute Ltd.",
+    "sector": "Healthcare",
+    "weight": 0.7,
+    "ltp": 985,
     "changes": {
-      "15m": 0.12,
-      "30m": 0.3,
+      "15m": 0.1,
+      "30m": 0.25,
       "1H": 0.48,
-      "1D": 0.65,
-      "1W": 1.6
-    },
-    "high": 7020,
-    "low": 6910,
-    "volume": "0.7M"
-  },
-  {
-    "symbol": "NTPC",
-    "name": "NTPC Ltd.",
-    "sector": "Utilities",
-    "weight": 1.48,
-    "ltp": 365.2,
-    "changes": {
-      "15m": 0.18,
-      "30m": 0.42,
-      "1H": 0.65,
-      "1D": 0.86,
-      "1W": 2.1
-    },
-    "high": 369,
-    "low": 362.5,
-    "volume": "9.4M"
-  },
-  {
-    "symbol": "POWERGRID",
-    "name": "Power Grid Corp.",
-    "sector": "Utilities",
-    "weight": 1.29,
-    "ltp": 320.4,
-    "changes": {
-      "15m": -0.1,
-      "30m": -0.22,
-      "1H": -0.35,
-      "1D": -0.47,
-      "1W": 0.7
-    },
-    "high": 324,
-    "low": 318,
-    "volume": "8.2M"
-  },
-  {
-    "symbol": "ULTRACEMCO",
-    "name": "UltraTech Cement",
-    "sector": "Process industries",
-    "weight": 1.2,
-    "ltp": 11400,
-    "changes": {
-      "15m": 0.15,
-      "30m": 0.35,
-      "1H": 0.55,
-      "1D": 0.75,
-      "1W": 1.6
-    },
-    "high": 11520,
-    "low": 11350,
-    "volume": "0.6M"
-  },
-  {
-    "symbol": "GRASIM",
-    "name": "Grasim Industries",
-    "sector": "Process industries",
-    "weight": 0.77,
-    "ltp": 2540,
-    "changes": {
-      "15m": -0.1,
-      "30m": -0.22,
-      "1H": -0.35,
-      "1D": -0.47,
-      "1W": -0.3
-    },
-    "high": 2565,
-    "low": 2525,
-    "volume": "1.2M"
-  },
-  {
-    "symbol": "TRENT",
-    "name": "Trent Ltd.",
-    "sector": "Retail",
-    "weight": 1.2,
-    "ltp": 6450,
-    "changes": {
-      "15m": 0.28,
-      "30m": 0.62,
-      "1H": 0.98,
-      "1D": 1.34,
+      "1D": 0.79,
       "1W": 3.4
     },
-    "high": 6520,
-    "low": 6390,
-    "volume": "1.8M"
+    "high": 998,
+    "low": 975,
+    "volume": "2.5M"
+  },
+  {
+    "symbol": "JIOFIN",
+    "name": "Jio Financial Services Ltd.",
+    "sector": "Financial Services",
+    "weight": 0.68,
+    "ltp": 310.5,
+    "changes": {
+      "15m": -0.3,
+      "30m": -0.75,
+      "1H": -1.5,
+      "1D": -2.34,
+      "1W": -1.2
+    },
+    "high": 316,
+    "low": 307,
+    "volume": "24.5M"
+  },
+  {
+    "symbol": "TATACONSUM",
+    "name": "Tata Consumer Products Ltd.",
+    "sector": "Fast Moving Consumer Goods",
+    "weight": 0.6,
+    "ltp": 940.5,
+    "changes": {
+      "15m": 0.1,
+      "30m": 0.25,
+      "1H": 0.4,
+      "1D": 0.56,
+      "1W": 1.1
+    },
+    "high": 949,
+    "low": 934,
+    "volume": "2.1M"
+  },
+  {
+    "symbol": "TMPV",
+    "name": "Tata Motors Passenger Vehicles Ltd.",
+    "sector": "Automobile and Auto Components",
+    "weight": 0.56,
+    "ltp": 785,
+    "changes": {
+      "15m": 0.1,
+      "30m": 0.25,
+      "1H": 0.45,
+      "1D": 0.73,
+      "1W": 2.5
+    },
+    "high": 798,
+    "low": 781.2,
+    "volume": "11.5M"
+  },
+  {
+    "symbol": "HDFCLIFE",
+    "name": "HDFC Life Insurance Company Ltd.",
+    "sector": "Financial Services",
+    "weight": 0.54,
+    "ltp": 695.4,
+    "changes": {
+      "15m": -0.05,
+      "30m": -0.12,
+      "1H": -0.2,
+      "1D": -0.3,
+      "1W": 0.4
+    },
+    "high": 704,
+    "low": 690.5,
+    "volume": "2.8M"
   }
 ];
 
