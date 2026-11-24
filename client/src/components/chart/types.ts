@@ -105,6 +105,11 @@ export interface CandlestickChartProps {
    * Optional callback when user right-clicks on chart canvas.
    */
   onContextMenu?: (e: React.MouseEvent) => void;
+
+  /**
+   * Optional callback when user clicks or double-clicks on an indicator to open its settings.
+   */
+  onOpenIndicatorSettings?: (indicatorId?: string) => void;
 }
 
 export type IndicatorType = 'OR' | 'VWAP' | 'EMA' | 'SMA' | 'VOLUME';
@@ -119,12 +124,15 @@ export interface IndicatorConfig {
   color: string;
   lineWidth?: 1 | 2 | 3 | 4;
   options: {
-    durationMinutes?: number; // OR opening duration (e.g. 60 for 1H)
+    durationMinutes?: number; // OR opening duration in mins (default: 60 for 1H)
     highColor?: string;
     lowColor?: string;
     showMid?: boolean;
     midColor?: string;
     period?: number; // For EMA / SMA
+    sessionSpecific?: boolean; // For VWAP (true: resets at session start 09:15 IST, false: continuous)
+    volumeStyle?: 'area' | 'bar'; // For Volume Overlay: 'area' (default) or 'bar'
+    volumeColor?: string; // Base / single color for volume (default: '#808080' grey)
     colorUp?: string;
     colorDown?: string;
   };
@@ -138,14 +146,14 @@ export const DEFAULT_INDICATORS: IndicatorConfig[] = [
     shortName: 'OR 1H',
     enabled: false,
     visible: true,
-    color: '#38bdf8',
+    color: '#38bdf8', // Sky blue default
     lineWidth: 1,
     options: {
       durationMinutes: 60,
-      highColor: '#38bdf8',
-      lowColor: '#f87171',
+      highColor: '#38bdf8', // Sky blue
+      lowColor: '#38bdf8',  // Sky blue
       showMid: true,
-      midColor: '#94a3b8'
+      midColor: 'rgba(56, 189, 248, 0.45)'
     }
   },
   {
@@ -157,7 +165,9 @@ export const DEFAULT_INDICATORS: IndicatorConfig[] = [
     visible: true,
     color: '#f59e0b',
     lineWidth: 1,
-    options: {}
+    options: {
+      sessionSpecific: true
+    }
   },
   {
     id: 'indicator-ema-20',
@@ -192,10 +202,12 @@ export const DEFAULT_INDICATORS: IndicatorConfig[] = [
     shortName: 'VOL',
     enabled: false,
     visible: true,
-    color: '#5F7A9A',
+    color: '#808080', // Grey default
     options: {
-      colorUp: 'rgba(95, 122, 154, 0.4)',
-      colorDown: 'rgba(239, 68, 68, 0.4)'
+      volumeStyle: 'area', // Area chart default
+      volumeColor: '#808080', // Grey default
+      colorUp: '#808080',
+      colorDown: '#555555'
     }
   }
 ];

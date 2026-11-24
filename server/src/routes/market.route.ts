@@ -5,14 +5,16 @@ import { FyersAutoLoginService } from '../services/broker/FyersAutoLoginService.
 
 export const marketRouter = Router();
 
-// GET /api/market/history?resolution=15m|30m|1H|1D
+// GET /api/market/history?resolution=15m|30m|1H|1D&symbol=RELIANCE|NIFTY 50
 marketRouter.get('/history', async (req: Request, res: Response) => {
   const resolution = (req.query.resolution as string) || 'D';
+  const symbol = (req.query.symbol as string) || 'NIFTY 50';
   try {
     const broker = marketEngine.getBrokerProvider();
-    const candles = await broker.fetchHistory(resolution);
+    const candles = await broker.fetchHistory(resolution, symbol);
     res.json({
       status: 'ok',
+      symbol,
       resolution,
       count: candles.length,
       candles

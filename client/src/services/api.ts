@@ -20,8 +20,8 @@ export async function fetchMarketStatus(): Promise<{
   return response.json();
 }
 
-export async function fetchMarketHistory(resolution: string): Promise<ChartCandleTick[]> {
-  const response = await fetch(`/api/market/history?resolution=${encodeURIComponent(resolution)}`);
+export async function fetchMarketHistory(resolution: string, symbol: string = 'NIFTY 50'): Promise<ChartCandleTick[]> {
+  const response = await fetch(`/api/market/history?resolution=${encodeURIComponent(resolution)}&symbol=${encodeURIComponent(symbol)}`);
   if (!response.ok) {
     throw new Error(`History fetch error: ${response.status}`);
   }

@@ -135,11 +135,16 @@ export function computeOpeningRangeBreakout(
 }
 
 /**
- * Computes Volume Weighted Average Price (VWAP) anchored to the start of each trading day (09:15 AM IST).
+ * Computes Volume Weighted Average Price (VWAP).
+ * - When sessionSpecific is true (default): resets accumulation at the start of each IST day (09:15 AM).
+ * - When sessionSpecific is false: computes rolling continuous VWAP across all candles.
  * Typical Price = (High + Low + Close) / 3
  * VWAP = CumSum(TypicalPrice * Volume) / CumSum(Volume)
  */
-export function computeVWAP(candles: (CandlestickData<Time> & { volume?: number })[]): IndicatorPoint[] {
+export function computeVWAP(
+  candles: (CandlestickData<Time> & { volume?: number })[],
+  sessionSpecific: boolean = true
+): IndicatorPoint[] {
   if (!candles || candles.length === 0) return [];
 
   const points: IndicatorPoint[] = [];
@@ -148,14 +153,16 @@ export function computeVWAP(candles: (CandlestickData<Time> & { volume?: number 
   let cumTypicalVol = 0;
 
   for (const c of candles) {
-    const d = toISTDate(c.time);
-    const dayKey = getISTDateString(d);
+    if (sessionSpecific) {
+      const d = toISTDate(c.time);
+      const dayKey = getISTDateString(d);
 
-    // Reset accumulator on new day
-    if (dayKey !== currentDay) {
-      currentDay = dayKey;
-      cumVolume = 0;
-      cumTypicalVol = 0;
+      // Reset accumulator on new trading day
+      if (dayKey !== currentDay) {
+        currentDay = dayKey;
+        cumVolume = 0;
+        cumTypicalVol = 0;
+      }
     }
 
     const typicalPrice = (c.high + c.low + c.close) / 3;
@@ -232,22 +239,24 @@ export function computeSMA(candles: CandlestickData<Time>[], period: number = 50
 }
 
 /**
- * Computes Volume Histogram Series
+ * Computes Volume Histogram / Area Series
  */
 export function computeVolumeSeries(
   candles: (CandlestickData<Time> & { volume?: number })[],
-  colorUp: string = 'rgba(95, 122, 154, 0.35)',
-  colorDown: string = 'rgba(239, 68, 68, 0.35)'
+  colorUp: string = 'rgba(128, 128, 128, 0.45)',
+  colorDown: string = 'rgba(128, 128, 128, 0.35)',
+  singleColor?: string
 ): VolumePoint[] {
   if (!candles) return [];
   return candles.map((c, i) => {
     const prev = i > 0 ? candles[i - 1] : null;
     const isUp = prev ? c.close >= prev.close : c.close >= c.open;
     const vol = c.volume !== undefined ? c.volume : Math.abs(c.close - c.open) * 125000 + 45000;
+    const itemColor = singleColor ? singleColor : (isUp ? colorUp : colorDown);
     return {
       time: c.time,
       value: Math.round(vol),
-      color: isUp ? colorUp : colorDown
+      color: itemColor
     };
   });
 }

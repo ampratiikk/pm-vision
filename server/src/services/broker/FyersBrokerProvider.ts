@@ -186,10 +186,36 @@ export class FyersBrokerProvider implements IBrokerProvider {
   }
 
   /**
-   * Fetch historical candles for NIFTY 50 based on requested timeframe resolution
+   * Helper to map any common symbol or constituent name to a valid FYERS symbol format
+   */
+  public toFyersSymbol(symbol: string): string {
+    const s = symbol.trim().toUpperCase();
+    if (s.includes(':')) return s;
+    if (s === 'NIFTY 50' || s === 'NIFTY' || s === 'NIFTY50') return 'NSE:NIFTY50-INDEX';
+    if (s === 'NIFTY BANK' || s === 'BANKNIFTY') return 'NSE:NIFTYBANK-INDEX';
+    if (s === 'NIFTY IT') return 'NSE:NIFTYIT-INDEX';
+    if (s === 'NIFTY FIN SERVICE' || s === 'FINNIFTY') return 'NSE:FINNIFTY-INDEX';
+    if (s === 'NIFTY AUTO') return 'NSE:NIFTYAUTO-INDEX';
+    if (s === 'NIFTY FMCG') return 'NSE:NIFTYFMCG-INDEX';
+    if (s === 'NIFTY METAL') return 'NSE:NIFTYMETAL-INDEX';
+    if (s === 'NIFTY PHARMA') return 'NSE:NIFTYPHARMA-INDEX';
+    if (s === 'NIFTY ENERGY') return 'NSE:NIFTYENERGY-INDEX';
+    if (s === 'NIFTY MEDIA') return 'NSE:NIFTYMEDIA-INDEX';
+    if (s === 'NIFTY REALTY') return 'NSE:NIFTYREALTY-INDEX';
+    if (s === 'NIFTY INFRA') return 'NSE:NIFTYINFRA-INDEX';
+    if (s === 'NIFTY MIDCAP 50') return 'NSE:NIFTYMIDCAP50-INDEX';
+    if (s === 'NIFTY NEXT 50') return 'NSE:NIFTYNEXT50-INDEX';
+    if (s === 'INDIA VIX') return 'NSE:INDIAVIX-INDEX';
+    if (s === 'GIFT NIFTY' || s === 'GIFT') return 'NSE:NIFTY50-INDEX';
+    // For all equities:
+    return `NSE:${s}-EQ`;
+  }
+
+  /**
+   * Fetch historical candles for any requested symbol based on requested timeframe resolution
    * Supports: 1m, 2m, 3m, 5m, 10m, 15m, 30m, 1H, 2H, 4H, 1D
    */
-  public async fetchHistory(resolution: string = 'D'): Promise<ChartCandleTick[]> {
+  public async fetchHistory(resolution: string = 'D', symbol: string = 'NIFTY 50'): Promise<ChartCandleTick[]> {
     if (!this.appId || !this.accessToken) return [];
 
     let fyersRes = 'D';
@@ -239,8 +265,9 @@ export class FyersBrokerProvider implements IBrokerProvider {
 
       const toStr = toDate.toISOString().slice(0, 10);
       const fromStr = fromDate.toISOString().slice(0, 10);
+      const mappedSymbol = this.toFyersSymbol(symbol);
 
-      const url = `https://api-t1.fyers.in/data/history?symbol=NSE:NIFTY50-INDEX&resolution=${fyersRes}&date_format=1&range_from=${fromStr}&range_to=${toStr}&cont_flag=1`;
+      const url = `https://api-t1.fyers.in/data/history?symbol=${encodeURIComponent(mappedSymbol)}&resolution=${fyersRes}&date_format=1&range_from=${fromStr}&range_to=${toStr}&cont_flag=1`;
       const res = await fetch(url, {
         headers: {
           Authorization: `${this.appId}:${this.accessToken}`

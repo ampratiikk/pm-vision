@@ -69,25 +69,26 @@ export function App() {
   // Technical Indicators State
   const [indicators, setIndicators] = useState<IndicatorConfig[]>(() => {
     try {
-      const saved = localStorage.getItem('pm_vision_indicators');
+      const saved = localStorage.getItem('pm_vision_indicators_v2');
       return saved ? JSON.parse(saved) : DEFAULT_INDICATORS;
     } catch {
       return DEFAULT_INDICATORS;
     }
   });
   const [isIndicatorsOpen, setIsIndicatorsOpen] = useState<boolean>(false);
+  const [selectedIndicatorId, setSelectedIndicatorId] = useState<string | null>(null);
 
   const handleUpdateIndicators = (newIndicators: IndicatorConfig[]) => {
     setIndicators(newIndicators);
     try {
-      localStorage.setItem('pm_vision_indicators', JSON.stringify(newIndicators));
+      localStorage.setItem('pm_vision_indicators_v2', JSON.stringify(newIndicators));
     } catch {}
   };
 
   const handleResetIndicators = () => {
     setIndicators(DEFAULT_INDICATORS);
     try {
-      localStorage.removeItem('pm_vision_indicators');
+      localStorage.removeItem('pm_vision_indicators_v2');
     } catch {}
   };
 
@@ -100,33 +101,16 @@ export function App() {
   const [activeChartSymbol, setActiveChartSymbol] = useState<string>('NIFTY 50');
   const [activeChartSymbolName, setActiveChartSymbolName] = useState<string>('Nifty 50 Index');
   const [activeChartSymbolSector, setActiveChartSymbolSector] = useState<string>('INDEX');
+  const activeChartSymbolRef = useRef(activeChartSymbol);
+  activeChartSymbolRef.current = activeChartSymbol;
   const baseHistoryRef = useRef<CandlestickData<Time>[]>(SAMPLE_CANDLESTICK_DATA);
 
-  const handleSelectSymbol = (symbol: string, name: string, sector: string, basePrice: number) => {
+  const handleSelectSymbol = (symbol: string, name: string, sector: string, _basePrice: number) => {
     setActiveChartSymbol(symbol);
     setActiveChartSymbolName(name);
     setActiveChartSymbolSector(sector);
-
-    const baseCandles = baseHistoryRef.current && baseHistoryRef.current.length > 0
-      ? baseHistoryRef.current
-      : SAMPLE_CANDLESTICK_DATA;
-
-    if (symbol !== 'NIFTY 50' && basePrice > 0) {
-      const initialRefPrice = 25349.65;
-      const ratio = basePrice / initialRefPrice;
-      const scaledCandles = baseCandles.map((c) => ({
-        time: c.time,
-        open: parseFloat((c.open * ratio).toFixed(2)),
-        high: parseFloat((c.high * ratio).toFixed(2)),
-        low: parseFloat((c.low * ratio).toFixed(2)),
-        close: parseFloat((c.close * ratio).toFixed(2))
-      }));
-      setChartCandles(scaledCandles as any);
-      chartRef.current?.setData(scaledCandles as any);
-    } else {
-      setChartCandles(baseCandles as any);
-      chartRef.current?.setData(baseCandles as any);
-    }
+    activeChartSymbolRef.current = symbol;
+    loadHistory(activeTimeFilter, symbol);
   };
 
   // Candlestick Appearance Customization
@@ -186,30 +170,34 @@ export function App() {
   const sidebarRef = useRef<HTMLDivElement>(null);
   const topSectionRef = useRef<HTMLDivElement>(null);
 
-  const loadHistory = useCallback(async (resolution: string) => {
+  const loadHistory = useCallback(async (resolution: string, symbol: string = activeChartSymbol) => {
     setIsChartLoading(true);
     try {
-      const candles = await fetchMarketHistory(resolution);
+      const candles = await fetchMarketHistory(resolution, symbol);
       if (candles && candles.length > 0) {
-        baseHistoryRef.current = candles as any;
-        if (activeChartSymbol !== 'NIFTY 50') {
-          const found = [...NIFTY_50_CONSTITUENTS, ...NIFTY_INDICES].find((i) => i.symbol === activeChartSymbol);
-          if (found && found.basePrice > 0) {
-            const ratio = found.basePrice / 25349.65;
-            const scaled = candles.map((c) => ({
-              time: c.time,
-              open: parseFloat((c.open * ratio).toFixed(2)),
-              high: parseFloat((c.high * ratio).toFixed(2)),
-              low: parseFloat((c.low * ratio).toFixed(2)),
-              close: parseFloat((c.close * ratio).toFixed(2))
-            }));
-            setChartCandles(scaled as any);
-            chartRef.current?.setData(scaled as any);
-            return;
-          }
+        if (symbol === 'NIFTY 50') {
+          baseHistoryRef.current = candles as any;
         }
         setChartCandles(candles as any);
         chartRef.current?.setData(candles as any);
+      } else {
+        // Fallback: accurately scale based on the stock's actual base price
+        const found = [...NIFTY_50_CONSTITUENTS, ...NIFTY_INDICES].find((i) => i.symbol === symbol);
+        const targetPrice = found?.basePrice || (symbol === 'NIFTY 50' ? 25349.65 : 1000);
+        const ratio = targetPrice / 25349.65;
+        const base = (baseHistoryRef.current && baseHistoryRef.current.length > 0)
+          ? baseHistoryRef.current
+          : SAMPLE_CANDLESTICK_DATA;
+        const scaled = base.map((c) => ({
+          time: c.time,
+          open: parseFloat((c.open * ratio).toFixed(2)),
+          high: parseFloat((c.high * ratio).toFixed(2)),
+          low: parseFloat((c.low * ratio).toFixed(2)),
+          close: parseFloat((c.close * ratio).toFixed(2)),
+          volume: (c as any).volume
+        }));
+        setChartCandles(scaled as any);
+        chartRef.current?.setData(scaled as any);
       }
     } catch (err) {
       console.error('Failed to load market history:', err);
@@ -220,7 +208,7 @@ export function App() {
 
   const handleTimeframeChange = (tf: string) => {
     setActiveTimeFilter(tf);
-    loadHistory(tf);
+    loadHistory(tf, activeChartSymbol);
   };
 
   const togglePin = (tf: string) => {
@@ -423,8 +411,24 @@ export function App() {
             if (data.expiries && data.expiries.length > 0) setExpiries(data.expiries);
             if (data.selectedExpiry) setSelectedExpiry(data.selectedExpiry);
 
-            if (data.marketStatus === 'OPEN' && data.latestCandle && chartRef.current) {
-              chartRef.current.updateCandle(data.latestCandle as any);
+            if (data.marketStatus === 'OPEN' && chartRef.current) {
+              if (activeChartSymbolRef.current === 'NIFTY 50' && data.latestCandle) {
+                chartRef.current.updateCandle(data.latestCandle as any);
+              } else if (data.securities) {
+                const sec = data.securities.find(
+                  (s) => s.symbol.toUpperCase() === activeChartSymbolRef.current.toUpperCase()
+                );
+                if (sec && sec.ltp > 0) {
+                  const nowSec = Math.floor(Date.now() / 1000);
+                  chartRef.current.updateCandle({
+                    time: nowSec as any,
+                    open: sec.open > 0 ? sec.open : sec.ltp,
+                    high: sec.high > 0 ? sec.high : sec.ltp,
+                    low: sec.low > 0 ? sec.low : sec.ltp,
+                    close: sec.ltp
+                  });
+                }
+              }
             }
           }
         }
@@ -888,6 +892,10 @@ export function App() {
                   indicators={indicators}
                   height="100%"
                   style={{ height: '100%' }}
+                  onOpenIndicatorSettings={(id) => {
+                    setSelectedIndicatorId(id || null);
+                    setIsIndicatorsOpen(true);
+                  }}
                   seriesOptions={{
                     upColor: candleColors.upBodyColor,
                     downColor: candleColors.downBodyColor,
@@ -1381,10 +1389,14 @@ export function App() {
       {/* ===================== INDICATORS MODAL ===================== */}
       <IndicatorsModal
         isOpen={isIndicatorsOpen}
-        onClose={() => setIsIndicatorsOpen(false)}
+        onClose={() => {
+          setIsIndicatorsOpen(false);
+          setSelectedIndicatorId(null);
+        }}
         indicators={indicators}
         onUpdateIndicators={handleUpdateIndicators}
         onResetIndicators={handleResetIndicators}
+        initialIndicatorId={selectedIndicatorId}
       />
 
       {/* ===================== SETTINGS MODAL ===================== */}

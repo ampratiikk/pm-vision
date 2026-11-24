@@ -10,6 +10,7 @@ import {
   CandlestickSeries,
   LineSeries,
   HistogramSeries,
+  AreaSeries,
   ColorType,
   LineStyle,
   CrosshairMode,
@@ -264,7 +265,8 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
       style,
       className,
       onChartReady,
-      onContextMenu
+      onContextMenu,
+      onOpenIndicatorSettings
     },
     ref
   ) => {
@@ -326,22 +328,24 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
 
             if (orData.highPoints.length > 0) {
               const highSeries = chart.addSeries(LineSeries, {
-                color: ind.options.highColor || '#38bdf8',
-                lineWidth: 1,
+                color: ind.options.highColor || ind.color || '#38bdf8',
+                lineWidth: (ind.lineWidth || 1) as 1 | 2 | 3 | 4,
                 lineStyle: LineStyle.Dashed,
                 priceLineVisible: false,
                 lastValueVisible: true,
+                crosshairMarkerVisible: false,
                 title: `${dur >= 60 ? dur / 60 + 'H' : dur + 'm'} High`
               });
               highSeries.setData(orData.highPoints);
               createdList.push(highSeries);
 
               const lowSeries = chart.addSeries(LineSeries, {
-                color: ind.options.lowColor || '#f87171',
-                lineWidth: 1,
+                color: ind.options.lowColor || ind.color || '#38bdf8',
+                lineWidth: (ind.lineWidth || 1) as 1 | 2 | 3 | 4,
                 lineStyle: LineStyle.Dashed,
                 priceLineVisible: false,
                 lastValueVisible: true,
+                crosshairMarkerVisible: false,
                 title: `${dur >= 60 ? dur / 60 + 'H' : dur + 'm'} Low`
               });
               lowSeries.setData(orData.lowPoints);
@@ -349,11 +353,12 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
 
               if (showMid && orData.midPoints.length > 0) {
                 const midSeries = chart.addSeries(LineSeries, {
-                  color: ind.options.midColor || '#94a3b8',
+                  color: ind.options.midColor || 'rgba(56, 189, 248, 0.45)',
                   lineWidth: 1,
                   lineStyle: LineStyle.Dotted,
                   priceLineVisible: false,
                   lastValueVisible: false,
+                  crosshairMarkerVisible: false,
                   title: 'Mid'
                 });
                 midSeries.setData(orData.midPoints);
@@ -361,14 +366,16 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
               }
             }
           } else if (ind.type === 'VWAP') {
-            const vwapData = computeVWAP(candles);
+            const sessionSpecific = ind.options.sessionSpecific !== false;
+            const vwapData = computeVWAP(candles, sessionSpecific);
             if (vwapData.length > 0) {
               const vSeries = chart.addSeries(LineSeries, {
                 color: ind.color || '#f59e0b',
                 lineWidth: (ind.lineWidth || 1) as 1 | 2 | 3 | 4,
                 priceLineVisible: false,
                 lastValueVisible: true,
-                title: 'VWAP'
+                crosshairMarkerVisible: false,
+                title: sessionSpecific ? 'VWAP (Session)' : 'VWAP'
               });
               vSeries.setData(vwapData);
               createdList.push(vSeries);
@@ -382,6 +389,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
                 lineWidth: (ind.lineWidth || 1) as 1 | 2 | 3 | 4,
                 priceLineVisible: false,
                 lastValueVisible: true,
+                crosshairMarkerVisible: false,
                 title: `EMA ${period}`
               });
               eSeries.setData(emaData);
@@ -396,28 +404,60 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
                 lineWidth: (ind.lineWidth || 1) as 1 | 2 | 3 | 4,
                 priceLineVisible: false,
                 lastValueVisible: true,
+                crosshairMarkerVisible: false,
                 title: `SMA ${period}`
               });
               sSeries.setData(smaData);
               createdList.push(sSeries);
             }
           } else if (ind.type === 'VOLUME') {
-            const volData = computeVolumeSeries(candles, ind.options.colorUp, ind.options.colorDown);
-            if (volData.length > 0) {
-              const volSeries = chart.addSeries(HistogramSeries, {
+            const volStyle = ind.options.volumeStyle || 'area';
+            const volColor = ind.options.volumeColor || ind.color || '#808080';
+
+            if (volStyle === 'area') {
+              // Area Chart volume overlay with grey / customizable gradient
+              const areaData = candles.map((c) => ({
+                time: c.time,
+                value: (c as any).volume !== undefined ? (c as any).volume : Math.abs(c.close - c.open) * 125000 + 45000
+              }));
+              const areaSeries = chart.addSeries(AreaSeries, {
+                topColor: volColor.startsWith('#') ? `${volColor}55` : 'rgba(128, 128, 128, 0.35)',
+                bottomColor: volColor.startsWith('#') ? `${volColor}08` : 'rgba(128, 128, 128, 0.02)',
+                lineColor: volColor,
+                lineWidth: 1,
                 priceFormat: { type: 'volume' },
                 priceScaleId: 'volume',
                 priceLineVisible: false,
-                lastValueVisible: false
+                lastValueVisible: false,
+                crosshairMarkerVisible: false
               });
               chart.priceScale('volume').applyOptions({
                 scaleMargins: {
-                  top: 0.82,
+                  top: 0.80,
                   bottom: 0
                 }
               });
-              volSeries.setData(volData);
-              createdList.push(volSeries);
+              areaSeries.setData(areaData);
+              createdList.push(areaSeries);
+            } else {
+              // Bar Chart (Histogram) volume overlay
+              const volData = computeVolumeSeries(candles, ind.options.colorUp || volColor, ind.options.colorDown || '#555555', ind.options.volumeColor);
+              if (volData.length > 0) {
+                const volSeries = chart.addSeries(HistogramSeries, {
+                  priceFormat: { type: 'volume' },
+                  priceScaleId: 'volume',
+                  priceLineVisible: false,
+                  lastValueVisible: false
+                });
+                chart.priceScale('volume').applyOptions({
+                  scaleMargins: {
+                    top: 0.80,
+                    bottom: 0
+                  }
+                });
+                volSeries.setData(volData);
+                createdList.push(volSeries);
+              }
             }
           }
         } catch (e) {
@@ -763,6 +803,10 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
       <div
         className={className}
         onContextMenu={onContextMenu}
+        onDoubleClick={() => {
+          const first = indicators.find((i) => i.enabled);
+          onOpenIndicatorSettings?.(first?.id);
+        }}
         style={{
           width: '100%',
           height: typeof height === 'number' ? `${height}px` : height,
@@ -832,7 +876,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
           </div>
         )}
 
-        {/* Active Indicators Overlay Badges */}
+        {/* Active Indicators Overlay Badges (Click or Double-Click to open settings) */}
         {indicators && indicators.some((ind) => ind.enabled && ind.visible) && (
           <div
             style={{
@@ -853,16 +897,33 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
               .map((ind) => (
                 <div
                   key={ind.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenIndicatorSettings?.(ind.id);
+                  }}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    onOpenIndicatorSettings?.(ind.id);
+                  }}
+                  title={`Click or double click to open ${ind.shortName} settings`}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: '5px',
-                    backgroundColor: 'rgba(5, 5, 5, 0.85)',
+                    backgroundColor: 'rgba(5, 5, 5, 0.88)',
                     border: `1px solid ${ind.color || '#5F7A9A'}`,
                     borderRadius: '3px',
                     padding: '2px 7px',
                     color: '#e5e7eb',
-                    backdropFilter: 'blur(4px)'
+                    cursor: 'pointer',
+                    backdropFilter: 'blur(4px)',
+                    transition: 'all 0.15s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(95, 122, 154, 0.2)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(5, 5, 5, 0.88)';
                   }}
                 >
                   <span
@@ -870,15 +931,40 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
                       width: '6px',
                       height: '6px',
                       borderRadius: '50%',
-                      backgroundColor: ind.color || '#5F7A9A'
+                      backgroundColor: ind.color || '#5F7A9A',
+                      boxShadow: `0 0 5px ${ind.color || '#5F7A9A'}`
                     }}
                   />
                   <span style={{ fontWeight: 600 }}>{ind.shortName}</span>
                   {ind.type === 'OR' && (
-                    <span style={{ color: '#a3a3a3', fontSize: '0.60rem' }}>
+                    <span style={{ color: '#9ca3af', fontSize: '0.60rem' }}>
                       ({ind.options.durationMinutes || 60}m)
                     </span>
                   )}
+                  {ind.type === 'VWAP' && (
+                    <span style={{ color: '#9ca3af', fontSize: '0.60rem' }}>
+                      ({ind.options.sessionSpecific !== false ? 'Session' : 'Cont'})
+                    </span>
+                  )}
+                  {ind.type === 'VOLUME' && (
+                    <span style={{ color: '#9ca3af', fontSize: '0.60rem', textTransform: 'capitalize' }}>
+                      ({ind.options.volumeStyle || 'area'})
+                    </span>
+                  )}
+                  <svg
+                    width="10"
+                    height="10"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#9ca3af"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    style={{ marginLeft: '2px' }}
+                  >
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                  </svg>
                 </div>
               ))}
           </div>

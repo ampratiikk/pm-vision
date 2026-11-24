@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { IndicatorConfig } from './types';
 
 interface IndicatorsModalProps {
@@ -7,6 +7,7 @@ interface IndicatorsModalProps {
   indicators: IndicatorConfig[];
   onUpdateIndicators: (indicators: IndicatorConfig[]) => void;
   onResetIndicators: () => void;
+  initialIndicatorId?: string | null;
 }
 
 export const IndicatorsModal: React.FC<IndicatorsModalProps> = ({
@@ -14,10 +15,17 @@ export const IndicatorsModal: React.FC<IndicatorsModalProps> = ({
   onClose,
   indicators,
   onUpdateIndicators,
-  onResetIndicators
+  onResetIndicators,
+  initialIndicatorId
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isOpen && initialIndicatorId) {
+      setExpandedId(initialIndicatorId);
+    }
+  }, [isOpen, initialIndicatorId]);
 
   if (!isOpen) return null;
 
@@ -256,7 +264,7 @@ export const IndicatorsModal: React.FC<IndicatorsModalProps> = ({
                         </div>
 
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <span style={{ fontSize: '0.70rem', color: '#a3a3a3' }}>OR High Line Color:</span>
+                          <span style={{ fontSize: '0.70rem', color: '#a3a3a3' }}>OR High Color:</span>
                           <input
                             type="color"
                             value={ind.options.highColor || '#38bdf8'}
@@ -273,10 +281,10 @@ export const IndicatorsModal: React.FC<IndicatorsModalProps> = ({
                         </div>
 
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <span style={{ fontSize: '0.70rem', color: '#a3a3a3' }}>OR Low Line Color:</span>
+                          <span style={{ fontSize: '0.70rem', color: '#a3a3a3' }}>OR Low Color:</span>
                           <input
                             type="color"
-                            value={ind.options.lowColor || '#f87171'}
+                            value={ind.options.lowColor || '#38bdf8'}
                             onChange={(e) => handleUpdateOptions(ind.id, { lowColor: e.target.value })}
                             style={{
                               width: '28px',
@@ -368,22 +376,105 @@ export const IndicatorsModal: React.FC<IndicatorsModalProps> = ({
 
                     {/* VWAP Settings */}
                     {ind.type === 'VWAP' && (
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <span style={{ fontSize: '0.70rem', color: '#a3a3a3' }}>Line Color:</span>
-                        <input
-                          type="color"
-                          value={ind.color}
-                          onChange={(e) => handleUpdateColor(ind.id, e.target.value)}
-                          style={{
-                            width: '28px',
-                            height: '22px',
-                            backgroundColor: 'transparent',
-                            border: '1px solid #262626',
-                            cursor: 'pointer',
-                            borderRadius: '2px'
-                          }}
-                        />
-                      </div>
+                      <>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <span style={{ fontSize: '0.70rem', color: '#a3a3a3' }}>Session Specific:</span>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={ind.options.sessionSpecific !== false}
+                              onChange={(e) => handleUpdateOptions(ind.id, { sessionSpecific: e.target.checked })}
+                              style={{ accentColor: '#5F7A9A', cursor: 'pointer' }}
+                            />
+                            <span style={{ fontSize: '0.68rem', color: '#e5e7eb' }}>
+                              Reset daily at 09:15 AM IST
+                            </span>
+                          </label>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <span style={{ fontSize: '0.70rem', color: '#a3a3a3' }}>Line Color:</span>
+                          <input
+                            type="color"
+                            value={ind.color}
+                            onChange={(e) => handleUpdateColor(ind.id, e.target.value)}
+                            style={{
+                              width: '28px',
+                              height: '22px',
+                              backgroundColor: 'transparent',
+                              border: '1px solid #262626',
+                              cursor: 'pointer',
+                              borderRadius: '2px'
+                            }}
+                          />
+                        </div>
+                      </>
+                    )}
+
+                    {/* Volume Overlay Settings */}
+                    {ind.type === 'VOLUME' && (
+                      <>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <span style={{ fontSize: '0.70rem', color: '#a3a3a3' }}>Display Style:</span>
+                          <div style={{ display: 'flex', gap: '4px' }}>
+                            <button
+                              onClick={() => handleUpdateOptions(ind.id, { volumeStyle: 'area' })}
+                              style={{
+                                padding: '2px 8px',
+                                fontSize: '0.66rem',
+                                borderRadius: '3px',
+                                backgroundColor: (ind.options.volumeStyle || 'area') === 'area' ? '#5F7A9A' : '#141414',
+                                color: (ind.options.volumeStyle || 'area') === 'area' ? '#ffffff' : '#a3a3a3',
+                                border: '1px solid #262626',
+                                cursor: 'pointer',
+                                fontWeight: (ind.options.volumeStyle || 'area') === 'area' ? 600 : 400
+                              }}
+                            >
+                              Area Chart (Default)
+                            </button>
+                            <button
+                              onClick={() => handleUpdateOptions(ind.id, { volumeStyle: 'bar' })}
+                              style={{
+                                padding: '2px 8px',
+                                fontSize: '0.66rem',
+                                borderRadius: '3px',
+                                backgroundColor: ind.options.volumeStyle === 'bar' ? '#5F7A9A' : '#141414',
+                                color: ind.options.volumeStyle === 'bar' ? '#ffffff' : '#a3a3a3',
+                                border: '1px solid #262626',
+                                cursor: 'pointer',
+                                fontWeight: ind.options.volumeStyle === 'bar' ? 600 : 400
+                              }}
+                            >
+                              Bar Chart (Histogram)
+                            </button>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <span style={{ fontSize: '0.70rem', color: '#a3a3a3' }}>Volume Color:</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <input
+                              type="color"
+                              value={ind.options.volumeColor || ind.color || '#808080'}
+                              onChange={(e) => {
+                                handleUpdateOptions(ind.id, { volumeColor: e.target.value });
+                                handleUpdateColor(ind.id, e.target.value);
+                              }}
+                              style={{
+                                width: '28px',
+                                height: '22px',
+                                backgroundColor: 'transparent',
+                                border: '1px solid #262626',
+                                cursor: 'pointer',
+                                borderRadius: '2px'
+                              }}
+                            />
+                            <span style={{ fontSize: '0.68rem', color: '#e5e7eb' }}>
+                              {ind.options.volumeColor || ind.color || '#808080'}
+                            </span>
+                          </div>
+                        </div>
+                      </>
                     )}
                   </div>
                 )}
