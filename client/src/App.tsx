@@ -28,12 +28,15 @@ import {
   OptionChainWidget,
   NiftyHeatmap,
   WatchlistDrawer,
-  WatchlistMode
+  WatchlistMode,
+  SymbolSearchModal,
+  NIFTY_50_CONSTITUENTS,
+  NIFTY_INDICES
 } from './components/dashboard';
 import { SettingsModal } from './components/dashboard/SettingsModal';
 import logoImg from './assets/logo.png';
 
-type AppPage = 'dashboard' | 'heatmap';
+type AppPage = 'dashboard' | 'chart' | 'heatmap';
 
 const ALL_TIMEFRAMES = [
   { label: '1m', value: '1m' },
@@ -91,7 +94,40 @@ export function App() {
   // Watchlist State (Overlay Slider, Docked, or Fullscreen)
   const [isWatchlistOpen, setIsWatchlistOpen] = useState<boolean>(false);
   const [watchlistMode, setWatchlistMode] = useState<WatchlistMode>('overlay');
-  const [activeWatchlistSymbol, setActiveWatchlistSymbol] = useState<string>('NIFTY 50');
+
+  // Symbol Search State
+  const [isSymbolSearchOpen, setIsSymbolSearchOpen] = useState<boolean>(false);
+  const [activeChartSymbol, setActiveChartSymbol] = useState<string>('NIFTY 50');
+  const [activeChartSymbolName, setActiveChartSymbolName] = useState<string>('Nifty 50 Index');
+  const [activeChartSymbolSector, setActiveChartSymbolSector] = useState<string>('INDEX');
+  const baseHistoryRef = useRef<CandlestickData<Time>[]>(SAMPLE_CANDLESTICK_DATA);
+
+  const handleSelectSymbol = (symbol: string, name: string, sector: string, basePrice: number) => {
+    setActiveChartSymbol(symbol);
+    setActiveChartSymbolName(name);
+    setActiveChartSymbolSector(sector);
+
+    const baseCandles = baseHistoryRef.current && baseHistoryRef.current.length > 0
+      ? baseHistoryRef.current
+      : SAMPLE_CANDLESTICK_DATA;
+
+    if (symbol !== 'NIFTY 50' && basePrice > 0) {
+      const initialRefPrice = 25349.65;
+      const ratio = basePrice / initialRefPrice;
+      const scaledCandles = baseCandles.map((c) => ({
+        time: c.time,
+        open: parseFloat((c.open * ratio).toFixed(2)),
+        high: parseFloat((c.high * ratio).toFixed(2)),
+        low: parseFloat((c.low * ratio).toFixed(2)),
+        close: parseFloat((c.close * ratio).toFixed(2))
+      }));
+      setChartCandles(scaledCandles as any);
+      chartRef.current?.setData(scaledCandles as any);
+    } else {
+      setChartCandles(baseCandles as any);
+      chartRef.current?.setData(baseCandles as any);
+    }
+  };
 
   // Candlestick Appearance Customization
   const [candleColors, setCandleColors] = useState<CandleColorSettings>(() => {
@@ -155,6 +191,23 @@ export function App() {
     try {
       const candles = await fetchMarketHistory(resolution);
       if (candles && candles.length > 0) {
+        baseHistoryRef.current = candles as any;
+        if (activeChartSymbol !== 'NIFTY 50') {
+          const found = [...NIFTY_50_CONSTITUENTS, ...NIFTY_INDICES].find((i) => i.symbol === activeChartSymbol);
+          if (found && found.basePrice > 0) {
+            const ratio = found.basePrice / 25349.65;
+            const scaled = candles.map((c) => ({
+              time: c.time,
+              open: parseFloat((c.open * ratio).toFixed(2)),
+              high: parseFloat((c.high * ratio).toFixed(2)),
+              low: parseFloat((c.low * ratio).toFixed(2)),
+              close: parseFloat((c.close * ratio).toFixed(2))
+            }));
+            setChartCandles(scaled as any);
+            chartRef.current?.setData(scaled as any);
+            return;
+          }
+        }
         setChartCandles(candles as any);
         chartRef.current?.setData(candles as any);
       }
@@ -163,7 +216,7 @@ export function App() {
     } finally {
       setIsChartLoading(false);
     }
-  }, []);
+  }, [activeChartSymbol]);
 
   const handleTimeframeChange = (tf: string) => {
     setActiveTimeFilter(tf);
@@ -258,7 +311,14 @@ export function App() {
         return;
       }
 
-      if (isSettingsOpen) return;
+      if (isSettingsOpen || isIndicatorsOpen || isSymbolSearchOpen) return;
+
+      // Ctrl+K or / to open Symbol Search (TradingView standard)
+      if (((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') || e.key === '/') {
+        e.preventDefault();
+        setIsSymbolSearchOpen(true);
+        return;
+      }
 
       if (!keyIntervalVisible) {
         if (e.key >= '1' && e.key <= '9') {
@@ -318,7 +378,7 @@ export function App() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('mousedown', handleWindowMouseDown);
     };
-  }, [keyIntervalVisible, keyIntervalBuffer, isSettingsOpen, handleTimeframeChange]);
+  }, [keyIntervalVisible, keyIntervalBuffer, isSettingsOpen, isIndicatorsOpen, isSymbolSearchOpen, handleTimeframeChange]);
 
   // Check market session & broker status every 15 seconds
   useEffect(() => {
@@ -505,9 +565,9 @@ export function App() {
       {/* Main Workspace with Navigation Rail shifted to Right */}
       <div style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>
         {/* Content Area */}
-        {activePage === 'dashboard' ? (
+        {activePage !== 'heatmap' ? (
           <>
-            {/* Left Area: Candlestick Chart */}
+            {/* Left Area (or Full Workspace in 'chart' view): Candlestick Chart */}
             <div style={{
               flex: 1,
               display: 'flex',
@@ -516,7 +576,7 @@ export function App() {
               position: 'relative',
               overflow: 'hidden'
             }}>
-              {/* Chart Top Sub-Bar: Timeframe Switcher & Reset */}
+              {/* Chart Top Sub-Bar: Search on LHS + Symbol + Timeframes + Indicators */}
               <div style={{
                 height: '38px',
                 display: 'flex',
@@ -527,10 +587,57 @@ export function App() {
                 backgroundColor: '#050505',
                 flexShrink: 0
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', position: 'relative' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', position: 'relative' }}>
+                  {/* Search Option on LHS of Symbol Name */}
+                  <button
+                    onClick={() => setIsSymbolSearchOpen(true)}
+                    title="Search Stock or Index (Click or Ctrl+K / /)"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      backgroundColor: '#111111',
+                      border: '1px solid #262626',
+                      borderRadius: '3px',
+                      padding: '3px 8px',
+                      color: '#e5e7eb',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = '#5F7A9A';
+                      e.currentTarget.style.backgroundColor = 'rgba(95, 122, 154, 0.15)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = '#262626';
+                      e.currentTarget.style.backgroundColor = '#111111';
+                    }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5F7A9A" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="11" cy="11" r="8"></circle>
+                      <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    <span style={{ fontSize: '0.68rem', fontWeight: 600, color: '#CCCCCC' }}>Search</span>
+                  </button>
+
+                  {/* Active Symbol Display (Clickable to open search) */}
+                  <div
+                    onClick={() => setIsSymbolSearchOpen(true)}
+                    title={`${activeChartSymbolName} - Click to switch symbol`}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      cursor: 'pointer',
+                      padding: '2px 5px',
+                      borderRadius: '3px',
+                      transition: 'background-color 0.15s ease'
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                  >
                     <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#ffffff', letterSpacing: '0.03em' }}>
-                      NIFTY 50
+                      {activeChartSymbol}
                     </span>
                     <span style={{
                       fontSize: '0.62rem',
@@ -539,9 +646,10 @@ export function App() {
                       backgroundColor: 'rgba(95, 122, 154, 0.15)',
                       padding: '1px 5px',
                       borderRadius: '2px',
-                      border: '1px solid rgba(95, 122, 154, 0.3)'
+                      border: '1px solid rgba(95, 122, 154, 0.3)',
+                      textTransform: 'uppercase'
                     }}>
-                      INDEX
+                      {activeChartSymbolSector}
                     </span>
                   </div>
 
@@ -766,21 +874,6 @@ export function App() {
                       </span>
                     )}
                   </button>
-
-                  <button
-                    onClick={() => chartRef.current?.fitContent()}
-                    style={{
-                      padding: '2px 8px',
-                      fontSize: '0.70rem',
-                      backgroundColor: '#121212',
-                      border: '1px solid #262626',
-                      color: '#e5e7eb',
-                      borderRadius: '3px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Reset View
-                  </button>
                 </div>
               </div>
 
@@ -851,149 +944,161 @@ export function App() {
               </div>
             </div>
 
-            {/* ↔ HORIZONTAL RESIZER BORDER (Drag to resize Left Chart vs Right Sidebar) */}
-            <div
-              onMouseDown={startDraggingH}
-              title="Drag left/right to resize sidebar width"
-              style={{
-                width: '8px',
-                flexShrink: 0,
-                cursor: 'col-resize',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: isDraggingH ? '#171717' : 'transparent',
-                transition: 'background-color 0.15s ease'
-              }}
-            >
-              <div style={{
-                width: '2px',
-                height: '42px',
-                borderRadius: '1px',
-                backgroundColor: isDraggingH ? '#5F7A9A' : '#262626',
-                transition: 'background-color 0.15s ease'
-              }} />
-            </div>
-
-            {/* Right Area: Stacked Sidebar or Docked Watchlist */}
-            <div
-              ref={sidebarRef}
-              style={{
-                width: `${sidebarWidth}px`,
-                flexShrink: 0,
-                display: 'flex',
-                flexDirection: 'column',
-                backgroundColor: '#050505',
-                overflow: 'hidden'
-              }}
-            >
-              {isWatchlistOpen && watchlistMode === 'docked' ? (
-                <WatchlistDrawer
-                  isOpen={true}
-                  mode="docked"
-                  onChangeMode={(m) => setWatchlistMode(m)}
-                  onClose={() => setIsWatchlistOpen(false)}
-                  securities={securities}
-                  activeSymbol={activeWatchlistSymbol}
-                  onSelectSymbol={(sym) => setActiveWatchlistSymbol(sym)}
-                />
-              ) : (
-                <>
-                  {/* TOP SECTION: Highlight Window & Basis Spread */}
-                  <div
-                    ref={topSectionRef}
-                    style={{
-                      height: `calc(${(1 - optionChainRatio) * 100}% - 4px)`,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      overflow: 'hidden',
-                      minHeight: '140px'
-                    }}
-                  >
-                    {/* 1. Highlight Window */}
-                    <div style={{
-                      height: `calc(${highlightRatio * 100}% - 3px)`,
-                      minHeight: '80px',
-                      overflow: 'hidden'
-                    }}>
-                      <HighlightWindow securities={securities} style={{ height: '100%' }} />
-                    </div>
-
-                    {/* ↕ SUB-VERTICAL RESIZER */}
-                    <div
-                      onMouseDown={startDraggingSubV}
-                      title="Drag up/down to resize Highlight Window & Basis Spread"
-                      style={{
-                        height: '6px',
-                        flexShrink: 0,
-                        cursor: 'row-resize',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        backgroundColor: isDraggingSubV ? '#171717' : 'transparent'
-                      }}
-                    >
-                      <div style={{
-                        height: '1px',
-                        width: '32px',
-                        backgroundColor: isDraggingSubV ? '#5F7A9A' : '#262626',
-                        transition: 'background-color 0.15s ease'
-                      }} />
-                    </div>
-
-                    {/* 2. Basis Spread */}
-                    <div style={{
-                      flex: 1,
-                      minHeight: '80px',
-                      overflow: 'hidden'
-                    }}>
-                      <BasisSpreadWidget pairs={basisSpreads} style={{ height: '100%' }} />
-                    </div>
-                  </div>
-
-                  {/* ↕ MAIN VERTICAL RESIZER */}
-                  <div
-                    onMouseDown={startDraggingV}
-                    title="Drag up/down to adjust Option Chain height"
-                    style={{
-                      height: '8px',
-                      flexShrink: 0,
-                      cursor: 'row-resize',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      backgroundColor: isDraggingV ? '#171717' : 'transparent',
-                      transition: 'background-color 0.15s ease'
-                    }}
-                  >
-                    <div style={{
-                      height: '2px',
-                      width: '42px',
-                      borderRadius: '1px',
-                      backgroundColor: isDraggingV ? '#5F7A9A' : '#262626',
-                      transition: 'background-color 0.15s ease'
-                    }} />
-                  </div>
-
-                  {/* BOTTOM SECTION: Option Chain */}
-                  <div style={{
-                    height: `calc(${optionChainRatio * 100}% - 4px)`,
-                    minHeight: '160px',
-                    overflow: 'hidden',
+            {/* IN DASHBOARD MODE: Horizontal Resizer + Stacked Right Sidebar */}
+            {activePage === 'dashboard' && (
+              <>
+                {/* ↔ HORIZONTAL RESIZER BORDER (Drag to resize Left Chart vs Right Sidebar) */}
+                <div
+                  onMouseDown={startDraggingH}
+                  title="Drag left/right to resize sidebar width"
+                  style={{
+                    width: '8px',
+                    flexShrink: 0,
+                    cursor: 'col-resize',
                     display: 'flex',
-                    flexDirection: 'column'
-                  }}>
-                    <OptionChainWidget
-                      data={optionChain}
-                      spotPrice={spotPrice}
-                      expiries={expiries}
-                      selectedExpiry={selectedExpiry}
-                      onSelectExpiry={handleSelectExpiry}
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: isDraggingH ? '#171717' : 'transparent',
+                    transition: 'background-color 0.15s ease'
+                  }}
+                >
+                  <div style={{
+                    width: '2px',
+                    height: '42px',
+                    borderRadius: '1px',
+                    backgroundColor: isDraggingH ? '#5F7A9A' : '#262626',
+                    transition: 'background-color 0.15s ease'
+                  }} />
+                </div>
+
+                {/* Right Area: Stacked Sidebar or Docked Watchlist */}
+                <div
+                  ref={sidebarRef}
+                  style={{
+                    width: `${sidebarWidth}px`,
+                    flexShrink: 0,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    backgroundColor: '#050505',
+                    overflow: 'hidden'
+                  }}
+                >
+                  {isWatchlistOpen && watchlistMode === 'docked' ? (
+                    <WatchlistDrawer
+                      isOpen={true}
+                      mode="docked"
+                      onChangeMode={(m) => setWatchlistMode(m)}
+                      onClose={() => setIsWatchlistOpen(false)}
+                      securities={securities}
+                      activeSymbol={activeChartSymbol}
+                      onSelectSymbol={(sym) => {
+                        const found = [...NIFTY_50_CONSTITUENTS, ...NIFTY_INDICES].find((i) => i.symbol === sym);
+                        if (found) {
+                          handleSelectSymbol(found.symbol, found.name, found.sector || (found.isIndex ? 'INDEX' : 'Stock'), found.basePrice);
+                        } else {
+                          setActiveChartSymbol(sym);
+                        }
+                      }}
                     />
-                  </div>
-                </>
-              )}
-            </div>
+                  ) : (
+                    <>
+                      {/* TOP SECTION: Highlight Window & Basis Spread */}
+                      <div
+                        ref={topSectionRef}
+                        style={{
+                          height: `calc(${(1 - optionChainRatio) * 100}% - 4px)`,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          overflow: 'hidden',
+                          minHeight: '140px'
+                        }}
+                      >
+                        {/* 1. Highlight Window */}
+                        <div style={{
+                          height: `calc(${highlightRatio * 100}% - 3px)`,
+                          minHeight: '80px',
+                          overflow: 'hidden'
+                        }}>
+                          <HighlightWindow securities={securities} style={{ height: '100%' }} />
+                        </div>
+
+                        {/* ↕ SUB-VERTICAL RESIZER */}
+                        <div
+                          onMouseDown={startDraggingSubV}
+                          title="Drag up/down to resize Highlight Window & Basis Spread"
+                          style={{
+                            height: '6px',
+                            flexShrink: 0,
+                            cursor: 'row-resize',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            backgroundColor: isDraggingSubV ? '#171717' : 'transparent'
+                          }}
+                        >
+                          <div style={{
+                            height: '1px',
+                            width: '32px',
+                            backgroundColor: isDraggingSubV ? '#5F7A9A' : '#262626',
+                            transition: 'background-color 0.15s ease'
+                          }} />
+                        </div>
+
+                        {/* 2. Basis Spread */}
+                        <div style={{
+                          flex: 1,
+                          minHeight: '80px',
+                          overflow: 'hidden'
+                        }}>
+                          <BasisSpreadWidget pairs={basisSpreads} style={{ height: '100%' }} />
+                        </div>
+                      </div>
+
+                      {/* ↕ MAIN VERTICAL RESIZER */}
+                      <div
+                        onMouseDown={startDraggingV}
+                        title="Drag up/down to adjust Option Chain height"
+                        style={{
+                          height: '8px',
+                          flexShrink: 0,
+                          cursor: 'row-resize',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          backgroundColor: isDraggingV ? '#171717' : 'transparent',
+                          transition: 'background-color 0.15s ease'
+                        }}
+                      >
+                        <div style={{
+                          height: '2px',
+                          width: '42px',
+                          borderRadius: '1px',
+                          backgroundColor: isDraggingV ? '#5F7A9A' : '#262626',
+                          transition: 'background-color 0.15s ease'
+                        }} />
+                      </div>
+
+                      {/* BOTTOM SECTION: Option Chain */}
+                      <div style={{
+                        height: `calc(${optionChainRatio * 100}% - 4px)`,
+                        minHeight: '160px',
+                        overflow: 'hidden',
+                        display: 'flex',
+                        flexDirection: 'column'
+                      }}>
+                        <OptionChainWidget
+                          data={optionChain}
+                          spotPrice={spotPrice}
+                          expiries={expiries}
+                          selectedExpiry={selectedExpiry}
+                          onSelectExpiry={handleSelectExpiry}
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+              </>
+            )}
           </>
         ) : (
           /* DEDICATED FULL-PAGE VIEW: Nifty 50 Treemap Heatmap */
@@ -1028,8 +1133,15 @@ export function App() {
               onChangeMode={(m) => setWatchlistMode(m)}
               onClose={() => setIsWatchlistOpen(false)}
               securities={securities}
-              activeSymbol={activeWatchlistSymbol}
-              onSelectSymbol={(sym) => setActiveWatchlistSymbol(sym)}
+              activeSymbol={activeChartSymbol}
+              onSelectSymbol={(sym) => {
+                const found = [...NIFTY_50_CONSTITUENTS, ...NIFTY_INDICES].find((i) => i.symbol === sym);
+                if (found) {
+                  handleSelectSymbol(found.symbol, found.name, found.sector || (found.isIndex ? 'INDEX' : 'Stock'), found.basePrice);
+                } else {
+                  setActiveChartSymbol(sym);
+                }
+              }}
             />
           </div>
         )}
@@ -1047,12 +1159,12 @@ export function App() {
           flexShrink: 0,
           zIndex: 30
         }}>
-          {/* Top: Main Dashboard and Heatmap immediately below it */}
+          {/* Top Navigation Views */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'center' }}>
             {/* 1. Main Dashboard Icon */}
             <button
               onClick={() => setActivePage('dashboard')}
-              title="Main Dashboard"
+              title="Main Dashboard (Chart + Analytics Sidebar)"
               style={{
                 width: '32px',
                 height: '32px',
@@ -1076,7 +1188,36 @@ export function App() {
               </svg>
             </button>
 
-            {/* 2. Heatmap Icon (Below Main Dashboard) */}
+            {/* 2. Dedicated Full Chart Section (Only Charts) */}
+            <button
+              onClick={() => setActivePage('chart')}
+              title="Charts (Full Technical Chart View)"
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '4px',
+                backgroundColor: activePage === 'chart' ? 'rgba(95, 122, 154, 0.2)' : 'transparent',
+                border: activePage === 'chart' ? '1px solid #5F7A9A' : '1px solid transparent',
+                color: activePage === 'chart' ? '#5F7A9A' : '#737373',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 0,
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="6" y1="3" x2="6" y2="21"></line>
+                <rect x="4" y="7" width="4" height="9" fill="currentColor"></rect>
+                <line x1="12" y1="2" x2="12" y2="22"></line>
+                <rect x="10" y="5" width="4" height="12" fill="currentColor"></rect>
+                <line x1="18" y1="4" x2="18" y2="20"></line>
+                <rect x="16" y="8" width="4" height="7" fill="currentColor"></rect>
+              </svg>
+            </button>
+
+            {/* 3. Heatmap Icon */}
             <button
               onClick={() => setActivePage('heatmap')}
               title="NIFTY 50 Heatmap"
@@ -1228,6 +1369,14 @@ export function App() {
           </div>
         </div>
       )}
+
+      {/* ===================== SYMBOL SEARCH MODAL ===================== */}
+      <SymbolSearchModal
+        isOpen={isSymbolSearchOpen}
+        onClose={() => setIsSymbolSearchOpen(false)}
+        onSelectSymbol={handleSelectSymbol}
+        activeSymbol={activeChartSymbol}
+      />
 
       {/* ===================== INDICATORS MODAL ===================== */}
       <IndicatorsModal
