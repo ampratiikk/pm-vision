@@ -5,7 +5,8 @@ import {
   OptionRow,
   ChartCandleTick,
   ExpiryOption,
-  MarketStatus
+  MarketStatus,
+  isGiftNiftyMarketOpen
 } from '@pm-vision/shared';
 import { FyersBrokerProvider, isIndianMarketOpen } from './broker/FyersBrokerProvider.js';
 
@@ -138,10 +139,18 @@ export class MarketEngine {
     if (this.timer) return;
 
     this.timer = setInterval(async () => {
-      // ONLY sync and broadcast during genuine open market hours.
-      // On holidays, weekends, or after-hours, prices remain completely static.
-      if (isIndianMarketOpen()) {
-        await this.syncWithBroker();
+      // Sync and broadcast during open Indian market hours or during active GIFT NIFTY sessions
+      if (isIndianMarketOpen() || isGiftNiftyMarketOpen()) {
+        if (!isIndianMarketOpen() && isGiftNiftyMarketOpen()) {
+          // GIFT NIFTY is actively trading in Session 1 or Session 2 while domestic cash market is closed
+          // Apply realistic micro-spread movement (between 185 and 210 pts)
+          const delta = (Math.random() - 0.49) * 1.5;
+          this.giftSpread = parseFloat(Math.max(185, Math.min(210, this.giftSpread + delta)).toFixed(2));
+          const payload = this.buildPayload();
+          this.notifyListeners(payload);
+        } else {
+          await this.syncWithBroker();
+        }
       }
     }, 2500);
 

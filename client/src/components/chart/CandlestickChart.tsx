@@ -334,7 +334,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
                 priceLineVisible: false,
                 lastValueVisible: true,
                 crosshairMarkerVisible: false,
-                title: `${dur >= 60 ? dur / 60 + 'H' : dur + 'm'} High`
+                title: ''
               });
               highSeries.setData(orData.highPoints);
               createdList.push(highSeries);
@@ -346,7 +346,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
                 priceLineVisible: false,
                 lastValueVisible: true,
                 crosshairMarkerVisible: false,
-                title: `${dur >= 60 ? dur / 60 + 'H' : dur + 'm'} Low`
+                title: ''
               });
               lowSeries.setData(orData.lowPoints);
               createdList.push(lowSeries);
@@ -359,7 +359,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
                   priceLineVisible: false,
                   lastValueVisible: false,
                   crosshairMarkerVisible: false,
-                  title: 'Mid'
+                  title: ''
                 });
                 midSeries.setData(orData.midPoints);
                 createdList.push(midSeries);
@@ -375,7 +375,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
                 priceLineVisible: false,
                 lastValueVisible: true,
                 crosshairMarkerVisible: false,
-                title: sessionSpecific ? 'VWAP (Session)' : 'VWAP'
+                title: ''
               });
               vSeries.setData(vwapData);
               createdList.push(vSeries);
@@ -390,7 +390,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
                 priceLineVisible: false,
                 lastValueVisible: true,
                 crosshairMarkerVisible: false,
-                title: `EMA ${period}`
+                title: ''
               });
               eSeries.setData(emaData);
               createdList.push(eSeries);
@@ -405,7 +405,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
                 priceLineVisible: false,
                 lastValueVisible: true,
                 crosshairMarkerVisible: false,
-                title: `SMA ${period}`
+                title: ''
               });
               sSeries.setData(smaData);
               createdList.push(sSeries);
@@ -519,13 +519,19 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
             syncIndicators(clean, indicators);
             try {
               chartRef.current?.timeScale().fitContent();
+              chartRef.current?.timeScale().applyOptions({ rightOffset: 15 });
+              chartRef.current?.priceScale('right').applyOptions({ autoScale: true });
             } catch {}
           } catch (err) {
             console.error('Error applying chart data:', err);
           }
         },
         fitContent: () => {
-          chartRef.current?.timeScale().fitContent();
+          try {
+            chartRef.current?.timeScale().fitContent();
+            chartRef.current?.timeScale().applyOptions({ rightOffset: 15 });
+            chartRef.current?.priceScale('right').applyOptions({ autoScale: true });
+          } catch {}
         },
         applySeriesOptions: (opts) => {
           seriesRef.current?.applyOptions(opts);
@@ -579,12 +585,21 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
         },
         rightPriceScale: {
           borderColor: '#5F7A9A',
-          textColor: '#5F7A9A'
+          textColor: '#5F7A9A',
+          autoScale: true,
+          scaleMargins: {
+            top: 0.12,
+            bottom: 0.15
+          }
         },
         timeScale: {
           borderColor: '#5F7A9A',
           timeVisible: true,
-          secondsVisible: false
+          secondsVisible: false,
+          rightOffset: 15,
+          barSpacing: 6,
+          fixLeftEdge: false,
+          fixRightEdge: false
         },
         localization: {
           dateFormat: 'dd MMM yyyy'
@@ -624,6 +639,8 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
         syncIndicators(cleanInitial, indicators);
       }
       chart.timeScale().fitContent();
+      chart.timeScale().applyOptions({ rightOffset: 15 });
+      chart.priceScale('right').applyOptions({ autoScale: true });
 
       // Attach custom price box primitive for dynamic positive/negative price box with #5F7A9A border
       const lastBar = cleanInitial.length > 0 ? cleanInitial[cleanInitial.length - 1] : null;
@@ -742,7 +759,11 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
             }
             setOhlcInfo(computeOHLCInfo(newData, newData.length - 1));
           },
-          fitContent: () => chart.timeScale().fitContent(),
+          fitContent: () => {
+            chart.timeScale().fitContent();
+            chart.timeScale().applyOptions({ rightOffset: 15 });
+            chart.priceScale('right').applyOptions({ autoScale: true });
+          },
           applySeriesOptions: (opts) => series.applyOptions(opts),
           getChart: () => chart,
           getSeries: () => series
@@ -782,6 +803,8 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
             syncIndicators(clean, indicators);
             try {
               chartRef.current?.timeScale().fitContent();
+              chartRef.current?.timeScale().applyOptions({ rightOffset: 15 });
+              chartRef.current?.priceScale('right').applyOptions({ autoScale: true });
             } catch {}
           }
         }
@@ -803,10 +826,6 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
       <div
         className={className}
         onContextMenu={onContextMenu}
-        onDoubleClick={() => {
-          const first = indicators.find((i) => i.enabled);
-          onOpenIndicatorSettings?.(first?.id);
-        }}
         style={{
           width: '100%',
           height: typeof height === 'number' ? `${height}px` : height,
@@ -876,7 +895,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
           </div>
         )}
 
-        {/* Active Indicators Overlay Badges (Click or Double-Click to open settings) */}
+        {/* Active Indicators Overlay Badges (Double-Click on badge to open respective settings) */}
         {indicators && indicators.some((ind) => ind.enabled && ind.visible) && (
           <div
             style={{
@@ -897,15 +916,11 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
               .map((ind) => (
                 <div
                   key={ind.id}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onOpenIndicatorSettings?.(ind.id);
-                  }}
                   onDoubleClick={(e) => {
                     e.stopPropagation();
                     onOpenIndicatorSettings?.(ind.id);
                   }}
-                  title={`Click or double click to open ${ind.shortName} settings`}
+                  title={`Double click to open ${ind.shortName} settings`}
                   style={{
                     display: 'flex',
                     alignItems: 'center',

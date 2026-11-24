@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { SecurityQuote, isGiftNiftyMarketOpen, getGiftNiftySessionInfo } from '@pm-vision/shared';
 import {
   WatchlistItem,
@@ -33,6 +33,20 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
   const [selectedSector, setSelectedSector] = useState('All Sectors');
   const [collapsedSectors, setCollapsedSectors] = useState<Record<string, boolean>>({});
 
+  // Dynamic GIFT NIFTY live session info
+  const [giftNiftySession, setGiftNiftySession] = useState(getGiftNiftySessionInfo);
+  const [isGiftLive, setIsGiftLive] = useState(isGiftNiftyMarketOpen);
+
+  useEffect(() => {
+    const update = () => {
+      setGiftNiftySession(getGiftNiftySessionInfo());
+      setIsGiftLive(isGiftNiftyMarketOpen());
+    };
+    update();
+    const timer = setInterval(update, 10000);
+    return () => clearInterval(timer);
+  }, []);
+
   // Sync quotes with live securities stream from WebSocket
   const securityMap = useMemo(() => {
     const map = new Map<string, SecurityQuote>();
@@ -41,9 +55,6 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
     }
     return map;
   }, [securities]);
-
-  const giftNiftySession = useMemo(() => getGiftNiftySessionInfo(), []);
-  const isGiftLive = useMemo(() => isGiftNiftyMarketOpen(), []);
 
   if (!isOpen) return null;
 
@@ -491,6 +502,46 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
         ) : (
           /* TAB 2: NIFTY INDICES (INCLUDING GIFT NIFTY) */
           <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {/* GIFT NIFTY Session Status Banner */}
+            <div style={{
+              margin: '8px 12px 6px 12px',
+              padding: '8px 10px',
+              borderRadius: '4px',
+              backgroundColor: isGiftLive ? 'rgba(16, 185, 129, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+              border: `1px solid ${isGiftLive ? 'rgba(16, 185, 129, 0.35)' : '#1f1f1f'}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  backgroundColor: isGiftLive ? '#10b981' : '#ef4444',
+                  boxShadow: isGiftLive ? '0 0 8px #10b981' : 'none'
+                }} />
+                <div>
+                  <div style={{ fontSize: '0.74rem', fontWeight: 700, color: isGiftLive ? '#10b981' : '#e5e7eb' }}>
+                    GIFT NIFTY (NSE IX)
+                  </div>
+                  <div style={{ fontSize: '0.62rem', color: '#9ca3af' }}>
+                    Session 1: 06:30–15:40 | Session 2: 16:35–02:45 IST
+                  </div>
+                </div>
+              </div>
+              <div style={{
+                fontSize: '0.64rem',
+                fontWeight: 700,
+                color: isGiftLive ? '#10b981' : '#ef4444',
+                padding: '2px 7px',
+                borderRadius: '3px',
+                backgroundColor: isGiftLive ? 'rgba(16, 185, 129, 0.18)' : 'rgba(239, 68, 68, 0.15)'
+              }}>
+                {isGiftLive ? 'LIVE' : 'CLOSED'}
+              </div>
+            </div>
+
             {filteredIndices.map((item) => {
               const { ltp, change, changePct } = getItemLtp(item);
               const isPositive = change >= 0;

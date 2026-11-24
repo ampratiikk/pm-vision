@@ -304,10 +304,12 @@ export function getGiftNiftySessionInfo(checkDate: Date = new Date()): MarketSes
   const currentMinute = istDate.getHours() * 60 + istDate.getMinutes();
 
   if (isOpen) {
-    const sessionName = currentMinute >= 6 * 60 + 30 && currentMinute <= 15 * 60 + 40 ? 'Session 1' : 'Session 2';
+    const isSession1 = currentMinute >= 6 * 60 + 30 && currentMinute <= 15 * 60 + 40;
+    const sessionName = isSession1 ? 'Session 1' : 'Session 2';
+    const sessionHours = isSession1 ? '06:30–15:40 IST' : '16:35–02:45 IST';
     return {
       status: 'LIVE',
-      label: `GIFT Live (${sessionName})`,
+      label: `GIFT Live (${sessionName} · ${sessionHours})`,
       dotColor: '#10b981'
     };
   }

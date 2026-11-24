@@ -6,6 +6,8 @@ import {
   OptionRow,
   ExpiryOption,
   getMarketSessionInfo,
+  getGiftNiftySessionInfo,
+  isGiftNiftyMarketOpen,
   MarketSessionInfo
 } from '@pm-vision/shared';
 import { fetchHealth, fetchMarketHistory, fetchOptionChainByExpiry, fetchMarketStatus } from './services/api';
@@ -65,6 +67,7 @@ export function App() {
 
   // Market session status (Markets Live / Markets Closed / Holiday / Pre / Post)
   const [sessionInfo, setSessionInfo] = useState<MarketSessionInfo>(getMarketSessionInfo);
+  const [giftSessionInfo, setGiftSessionInfo] = useState<MarketSessionInfo>(getGiftNiftySessionInfo);
 
   // Technical Indicators State
   const [indicators, setIndicators] = useState<IndicatorConfig[]>(() => {
@@ -372,11 +375,15 @@ export function App() {
   useEffect(() => {
     const checkStatus = () => {
       setSessionInfo(getMarketSessionInfo());
+      setGiftSessionInfo(getGiftNiftySessionInfo());
       fetchMarketStatus()
-        .then((res) => {
+        .then((res: any) => {
           setIsBrokerConnected(res.isBrokerConnected);
           if (res.session) {
             setSessionInfo(res.session);
+          }
+          if (res.giftSession) {
+            setGiftSessionInfo(res.giftSession);
           }
         })
         .catch(() => {});
@@ -411,8 +418,8 @@ export function App() {
             if (data.expiries && data.expiries.length > 0) setExpiries(data.expiries);
             if (data.selectedExpiry) setSelectedExpiry(data.selectedExpiry);
 
-            if (data.marketStatus === 'OPEN' && chartRef.current) {
-              if (activeChartSymbolRef.current === 'NIFTY 50' && data.latestCandle) {
+            if ((data.marketStatus === 'OPEN' || isGiftNiftyMarketOpen()) && chartRef.current) {
+              if (activeChartSymbolRef.current === 'NIFTY 50' && data.latestCandle && data.marketStatus === 'OPEN') {
                 chartRef.current.updateCandle(data.latestCandle as any);
               } else if (data.securities) {
                 const sec = data.securities.find(
@@ -540,28 +547,74 @@ export function App() {
           />
         </div>
 
-        {/* Header Right: Clean Market Status only */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        {/* Header Right: Market Status & GIFT NIFTY Live Session */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+          {/* Domestic Market Status */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '8px',
-            fontSize: '0.75rem',
-            color: '#e5e7eb',
+            gap: '6px',
+            fontSize: '0.72rem',
+            color: sessionInfo.status === 'LIVE' ? '#e5e7eb' : '#9ca3af',
             fontWeight: 600,
-            padding: '4px 10px',
+            padding: '3px 8px',
             borderRadius: '4px',
             backgroundColor: 'rgba(255, 255, 255, 0.03)',
             border: '1px solid #1f1f1f'
           }}>
             <span style={{
-              width: '8px',
-              height: '8px',
+              width: '7px',
+              height: '7px',
               borderRadius: '50%',
               backgroundColor: sessionInfo.dotColor,
-              boxShadow: `0 0 6px ${sessionInfo.dotColor}`
+              boxShadow: sessionInfo.status === 'LIVE' ? `0 0 6px ${sessionInfo.dotColor}` : 'none'
             }} />
-            <span>{sessionInfo.label}</span>
+            <span>NSE: {sessionInfo.label}</span>
+          </div>
+
+          {/* GIFT NIFTY Live Session Indicator */}
+          <div
+            onClick={() => {
+              handleSelectSymbol('GIFT NIFTY', 'GIFT Nifty 50 Futures (NSE IX)', 'INDEX', 25544.65);
+            }}
+            title="GIFT NIFTY (NSE IX) - Click to view chart"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '0.72rem',
+              color: giftSessionInfo.status === 'LIVE' ? '#10b981' : '#737373',
+              fontWeight: 600,
+              padding: '3px 9px',
+              borderRadius: '4px',
+              backgroundColor: giftSessionInfo.status === 'LIVE' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255, 255, 255, 0.02)',
+              border: `1px solid ${giftSessionInfo.status === 'LIVE' ? 'rgba(16, 185, 129, 0.4)' : '#1f1f1f'}`,
+              cursor: 'pointer',
+              transition: 'all 0.15s ease'
+            }}
+            onMouseEnter={(e) => {
+              if (giftSessionInfo.status === 'LIVE') {
+                e.currentTarget.style.backgroundColor = 'rgba(16, 185, 129, 0.2)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (giftSessionInfo.status === 'LIVE') {
+                e.currentTarget.style.backgroundColor = 'rgba(16, 185, 129, 0.12)';
+              }
+            }}
+          >
+            <span style={{
+              width: '7px',
+              height: '7px',
+              borderRadius: '50%',
+              backgroundColor: giftSessionInfo.dotColor,
+              boxShadow: giftSessionInfo.status === 'LIVE' ? '0 0 8px #10b981' : 'none'
+            }} />
+            <span>
+              {giftSessionInfo.status === 'LIVE'
+                ? `GIFT NIFTY · ${giftSessionInfo.label.replace('GIFT Live', 'LIVE')}`
+                : 'GIFT NIFTY: Closed'}
+            </span>
           </div>
         </div>
       </header>
@@ -655,6 +708,31 @@ export function App() {
                     }}>
                       {activeChartSymbolSector}
                     </span>
+                    {activeChartSymbol === 'GIFT NIFTY' && (
+                      <span style={{
+                        fontSize: '0.62rem',
+                        fontWeight: 700,
+                        color: giftSessionInfo.status === 'LIVE' ? '#10b981' : '#ef4444',
+                        backgroundColor: giftSessionInfo.status === 'LIVE' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.12)',
+                        border: `1px solid ${giftSessionInfo.status === 'LIVE' ? 'rgba(16, 185, 129, 0.45)' : 'rgba(239, 68, 68, 0.3)'}`,
+                        padding: '1px 6px',
+                        borderRadius: '2px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}>
+                        <span style={{
+                          width: '5px',
+                          height: '5px',
+                          borderRadius: '50%',
+                          backgroundColor: giftSessionInfo.status === 'LIVE' ? '#10b981' : '#ef4444',
+                          boxShadow: giftSessionInfo.status === 'LIVE' ? '0 0 6px #10b981' : 'none'
+                        }} />
+                        {giftSessionInfo.status === 'LIVE'
+                          ? giftSessionInfo.label.replace('GIFT Live', 'LIVE').toUpperCase()
+                          : 'SESSION CLOSED'}
+                      </span>
+                    )}
                   </div>
 
                   {/* Pinned Timeframe Buttons */}
@@ -1222,6 +1300,41 @@ export function App() {
                 <rect x="10" y="5" width="4" height="12" fill="currentColor"></rect>
                 <line x1="18" y1="4" x2="18" y2="20"></line>
                 <rect x="16" y="8" width="4" height="7" fill="currentColor"></rect>
+              </svg>
+            </button>
+
+            {/* Reset Chart View Button */}
+            <button
+              onClick={() => {
+                chartRef.current?.fitContent();
+              }}
+              title="Reset Chart View (Fit to screen with spacing)"
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '4px',
+                backgroundColor: 'transparent',
+                border: '1px solid transparent',
+                color: '#737373',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 0,
+                transition: 'all 0.15s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = '#5F7A9A';
+                e.currentTarget.style.backgroundColor = 'rgba(95, 122, 154, 0.15)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = '#737373';
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="23 4 23 10 17 10"></polyline>
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
               </svg>
             </button>
 
