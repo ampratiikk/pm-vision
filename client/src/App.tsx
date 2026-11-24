@@ -226,21 +226,22 @@ export function App() {
     return found?.basePrice || (activeChartSymbol === 'NIFTY 50' ? spotPrice : 0);
   }, [activeChartSymbol, spotPrice, securities]);
 
-  const loadHistory = useCallback(async (resolution: string, symbol: string = activeChartSymbol) => {
+  const loadHistory = useCallback(async (resolution: string, symbol?: string) => {
+    const targetSymbol = symbol || activeChartSymbolRef.current;
     setIsChartLoading(true);
     try {
-      const candles = await fetchMarketHistory(resolution, symbol);
+      const candles = await fetchMarketHistory(resolution, targetSymbol);
 
       if (candles && candles.length > 0) {
-        if (symbol === 'NIFTY 50') {
+        if (targetSymbol === 'NIFTY 50') {
           baseHistoryRef.current = candles as any;
         }
         setChartCandles(candles as any);
         chartRef.current?.setData(candles as any);
       } else {
         // Fallback: accurately scale based on the stock's actual base price
-        const found = [...NIFTY_50_CONSTITUENTS, ...NIFTY_INDICES].find((i) => i.symbol === symbol);
-        const targetPrice = found?.basePrice || (symbol === 'NIFTY 50' ? 25349.65 : 1000);
+        const found = [...NIFTY_50_CONSTITUENTS, ...NIFTY_INDICES].find((i) => i.symbol === targetSymbol);
+        const targetPrice = found?.basePrice || (targetSymbol === 'NIFTY 50' ? 25349.65 : 1000);
         const ratio = targetPrice / 25349.65;
         const base = (baseHistoryRef.current && baseHistoryRef.current.length > 0)
           ? baseHistoryRef.current
@@ -261,7 +262,7 @@ export function App() {
     } finally {
       setIsChartLoading(false);
     }
-  }, [activeChartSymbol, spotPrice, securities]);
+  }, []);
 
   const handleTimeframeChange = (tf: string) => {
     setActiveTimeFilter(tf);
@@ -495,7 +496,7 @@ export function App() {
       wsClientRef.current = null;
       client.close();
     };
-  }, [loadHistory]);
+  }, []);
 
   // Dynamically subscribe to active symbol on WebSocket whenever active chart symbol changes
   useEffect(() => {

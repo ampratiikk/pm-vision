@@ -1078,7 +1078,6 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
             setOhlcInfo(computeOHLCInfo(clean, clean.length - 1));
             syncIndicators(clean, indicators);
             syncCasPriceLine(currentCas, currentTf);
-            resetChartView(chartRef.current);
           }
         }
       } catch (err) {
