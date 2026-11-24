@@ -229,18 +229,8 @@ export function App() {
     setIsChartLoading(true);
     try {
       const candles = await fetchMarketHistory(resolution, symbol);
-      const sec = securities.find((s) => s.symbol.toUpperCase() === symbol.toUpperCase());
-      const casPrice = (sec && sec.ltp > 0)
-        ? sec.ltp
-        : (symbol === 'NIFTY 50' ? spotPrice : 0);
 
       if (candles && candles.length > 0) {
-        if (resolution !== '1D' && casPrice > 0) {
-          const last = candles[candles.length - 1];
-          last.close = casPrice;
-          last.high = Math.max(last.high, casPrice);
-          last.low = Math.min(last.low, casPrice);
-        }
         if (symbol === 'NIFTY 50') {
           baseHistoryRef.current = candles as any;
         }
@@ -262,12 +252,6 @@ export function App() {
           close: parseFloat((c.close * ratio).toFixed(2)),
           volume: (c as any).volume
         }));
-        if (resolution !== '1D' && casPrice > 0 && scaled.length > 0) {
-          const last = scaled[scaled.length - 1];
-          last.close = casPrice;
-          last.high = Math.max(last.high, casPrice);
-          last.low = Math.min(last.low, casPrice);
-        }
         setChartCandles(scaled as any);
         chartRef.current?.setData(scaled as any);
       }
