@@ -13,23 +13,15 @@ marketRouter.get('/history', async (req: Request, res: Response) => {
     const broker = marketEngine.getBrokerProvider();
     const candles = await broker.fetchHistory(resolution, symbol);
 
-    // On small timeframe charts (intraday), ensure the session's final candle reflects official CAS closing price
-    if (resolution !== 'D' && candles && candles.length > 0) {
-      const snap = marketEngine.getSnapshot();
-      let casPrice = 0;
-      if (symbol.toUpperCase() === 'NIFTY 50') {
-        casPrice = snap.spotPrice;
-      } else {
-        const sec = snap.securities?.find((s) => s.symbol.toUpperCase() === symbol.toUpperCase());
-        if (sec && sec.ltp > 0) {
-          casPrice = sec.ltp;
-        }
-      }
-      if (casPrice > 0) {
-        const last = candles[candles.length - 1];
-        last.close = casPrice;
-        last.high = Math.max(last.high, casPrice);
-        last.low = Math.min(last.low, casPrice);
+    // Official CAS / Closing Price determined as a reference price (never mutate candle OHLC!)
+    const snap = marketEngine.getSnapshot();
+    let casPrice = 0;
+    if (symbol.toUpperCase() === 'NIFTY 50') {
+      casPrice = snap.spotPrice;
+    } else {
+      const sec = snap.securities?.find((s) => s.symbol.toUpperCase() === symbol.toUpperCase());
+      if (sec && sec.ltp > 0) {
+        casPrice = sec.ltp;
       }
     }
 
@@ -38,6 +30,7 @@ marketRouter.get('/history', async (req: Request, res: Response) => {
       symbol,
       resolution,
       count: candles.length,
+      casPrice: casPrice > 0 ? casPrice : undefined,
       candles
     });
   } catch (err: any) {

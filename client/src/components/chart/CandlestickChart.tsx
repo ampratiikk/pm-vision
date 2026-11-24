@@ -271,6 +271,25 @@ function resetChartView(chartApi: IChartApi | null) {
   }
 }
 
+/**
+ * Helper to get interval length in seconds for standard chart timeframes
+ */
+function getTimeframeSeconds(tf: string): number {
+  const clean = (tf || '15m').toLowerCase().trim();
+  if (clean === '1m' || clean === '1') return 60;
+  if (clean === '2m' || clean === '2') return 120;
+  if (clean === '3m' || clean === '3') return 180;
+  if (clean === '5m' || clean === '5') return 300;
+  if (clean === '10m' || clean === '10') return 600;
+  if (clean === '15m' || clean === '15') return 900;
+  if (clean === '30m' || clean === '30') return 1800;
+  if (clean === '1h' || clean === '60') return 3600;
+  if (clean === '2h' || clean === '120') return 7200;
+  if (clean === '4h' || clean === '240') return 14400;
+  if (clean === '1d' || clean === 'd') return 86400;
+  return 900;
+}
+
 export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickChartProps>(
   (
     {
@@ -522,6 +541,137 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
       }
     };
 
+    /**
+     * Efficiently update active indicator lines using setData on existing series without rebuilding Canvas context
+     */
+    const updateIndicatorData = (candles: CandlestickData<Time>[], activeList: IndicatorConfig[]) => {
+      const chart = chartRef.current;
+      if (!chart || !candles || candles.length === 0) return;
+
+      const seriesMap = indicatorSeriesMapRef.current;
+
+      for (const ind of activeList) {
+        if (!ind.enabled || !ind.visible) continue;
+        const existing = seriesMap.get(ind.id);
+        if (!existing || existing.length === 0) continue;
+
+        try {
+          if (ind.type === 'OR') {
+            const dur = ind.options.durationMinutes || 60;
+            const showMid = ind.options.showMid === true;
+            const orData = computeOpeningRangeBreakout(candles, dur, showMid);
+            if (existing[0] && orData.highPoints.length > 0) existing[0].setData(orData.highPoints);
+            if (existing[1] && orData.lowPoints.length > 0) existing[1].setData(orData.lowPoints);
+            if (existing[2] && orData.midPoints.length > 0) existing[2].setData(orData.midPoints);
+          } else if (ind.type === 'VWAP') {
+            const sessionSpecific = ind.options.sessionSpecific !== false;
+            const vwapData = computeVWAP(candles, sessionSpecific);
+            if (existing[0] && vwapData.length > 0) existing[0].setData(vwapData);
+          } else if (ind.type === 'EMA') {
+            const period = ind.options.period || 20;
+            const emaData = computeEMA(candles, period);
+            if (existing[0] && emaData.length > 0) existing[0].setData(emaData);
+          } else if (ind.type === 'SMA') {
+            const period = ind.options.period || 50;
+            const smaData = computeSMA(candles, period);
+            if (existing[0] && smaData.length > 0) existing[0].setData(smaData);
+          } else if (ind.type === 'VOLUME') {
+            const volStyle = ind.options.volumeStyle || 'area';
+            const volColor = ind.options.volumeColor || ind.color || '#808080';
+            if (volStyle === 'area') {
+              const areaData = candles.map((c) => ({
+                time: c.time,
+                value: (c as any).volume !== undefined ? (c as any).volume : Math.abs(c.close - c.open) * 125000 + 45000
+              }));
+              if (existing[0]) existing[0].setData(areaData);
+            } else {
+              const volData = computeVolumeSeries(candles, ind.options.colorUp || volColor, ind.options.colorDown || '#555555', ind.options.volumeColor);
+              if (existing[0] && volData.length > 0) existing[0].setData(volData);
+            }
+          }
+        } catch (e) {
+          console.warn(`[CandlestickChart] Error updating indicator data for ${ind.id}:`, e);
+        }
+      }
+    };
+
+    /**
+     * TradingView-standard Real-Time Candle Formation:
+     * - Truncates incoming tick timestamp to the timeframe's interval bucket (shifted by +19800 IST)
+     * - If the interval has advanced: opens and appends a brand-new candle to the series
+     * - If within the active interval: updates high, low, close in-place
+     */
+    const updateLiveTickPrice = (price: number) => {
+      try {
+        if (typeof price !== 'number' || isNaN(price) || price <= 0) return;
+        const list = currentDataRef.current;
+        if (!list || list.length === 0) return;
+
+        const currentTf = timeframeRef.current || '15m';
+        const lastBar = list[list.length - 1];
+        const lastBarTime = Number(lastBar.time);
+
+        // Unified IST offset (+19800s) matching FYERS historical candles
+        const IST_OFFSET_SECONDS = 19800;
+        const nowIstSeconds = Math.floor(Date.now() / 1000) + IST_OFFSET_SECONDS;
+
+        let activeBar: CandlestickData<Time>;
+
+        if (currentTf === '1D') {
+          const dayBucket = Math.floor(nowIstSeconds / 86400) * 86400;
+          if (dayBucket > lastBarTime) {
+            activeBar = {
+              time: dayBucket as Time,
+              open: price,
+              high: price,
+              low: price,
+              close: price
+            };
+            list.push(activeBar);
+          } else {
+            activeBar = {
+              ...lastBar,
+              close: price,
+              high: Math.max(lastBar.high, price),
+              low: Math.min(lastBar.low, price)
+            };
+            list[list.length - 1] = activeBar;
+          }
+        } else {
+          const intervalSec = getTimeframeSeconds(currentTf);
+          const bucketTime = Math.floor(nowIstSeconds / intervalSec) * intervalSec;
+
+          if (bucketTime > lastBarTime) {
+            // Interval boundary crossed: advance and open a brand-new candle!
+            activeBar = {
+              time: bucketTime as Time,
+              open: price,
+              high: price,
+              low: price,
+              close: price
+            };
+            list.push(activeBar);
+          } else {
+            // Within current candle interval: update high, low, close
+            activeBar = {
+              ...lastBar,
+              close: price,
+              high: Math.max(lastBar.high, price),
+              low: Math.min(lastBar.low, price)
+            };
+            list[list.length - 1] = activeBar;
+          }
+        }
+
+        seriesRef.current?.update(activeBar);
+        priceBoxRef.current?.update(price, activeBar.close >= activeBar.open);
+        setOhlcInfo(computeOHLCInfo(list, list.length - 1));
+        updateIndicatorData(list, indicators);
+      } catch (err) {
+        console.warn('[CandlestickChart] Error updating live price tick:', err);
+      }
+    };
+
     // Expose imperative API for streaming real-time updates (FYERS WebSocket readiness)
     useImperativeHandle(
       ref,
@@ -548,32 +698,12 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
               list.push(cleanCandle);
             }
             setOhlcInfo(computeOHLCInfo(list, list.length - 1));
-            syncIndicators(list, indicators);
+            updateIndicatorData(list, indicators);
           } catch (err) {
             console.warn('[CandlestickChart] Error updating candle:', err);
           }
         },
-        updateLastBarPrice: (price: number) => {
-          try {
-            if (typeof price !== 'number' || isNaN(price) || price <= 0) return;
-            const list = currentDataRef.current;
-            if (!list || list.length === 0) return;
-            const lastBar = list[list.length - 1];
-            const updatedBar: CandlestickData<Time> = {
-              ...lastBar,
-              close: price,
-              high: Math.max(lastBar.high, price),
-              low: Math.min(lastBar.low, price)
-            };
-            list[list.length - 1] = updatedBar;
-            seriesRef.current?.update(updatedBar);
-            priceBoxRef.current?.update(price, price >= updatedBar.open);
-            setOhlcInfo(computeOHLCInfo(list, list.length - 1));
-            syncIndicators(list, indicators);
-          } catch (err) {
-            console.warn('[CandlestickChart] Error updating last bar price:', err);
-          }
-        },
+        updateLastBarPrice: updateLiveTickPrice,
         setData: (newData) => {
           try {
             const clean = sanitizeCandles(newData);
@@ -615,25 +745,9 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
       syncIndicators(currentDataRef.current, indicators);
     }, [indicators]);
 
-    // Sync CAS Price Line whenever casPrice or timeframe changes
+    // Sync CAS Price Line whenever casPrice or timeframe changes (reference line only)
     useEffect(() => {
       syncCasPriceLine(casPrice, timeframe);
-      if (casPrice && casPrice > 0 && timeframe !== '1D') {
-        const list = currentDataRef.current;
-        if (list.length > 0) {
-          const last = list[list.length - 1];
-          const updated: CandlestickData<Time> = {
-            ...last,
-            close: casPrice,
-            high: Math.max(last.high, casPrice),
-            low: Math.min(last.low, casPrice)
-          };
-          list[list.length - 1] = updated;
-          seriesRef.current?.update(updated);
-          priceBoxRef.current?.update(casPrice, casPrice >= updated.open);
-          setOhlcInfo(computeOHLCInfo(list, list.length - 1));
-        }
-      }
     }, [casPrice, timeframe]);
 
     useEffect(() => {
@@ -852,22 +966,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
             }
             setOhlcInfo(computeOHLCInfo(list, list.length - 1));
           },
-          updateLastBarPrice: (price: number) => {
-            if (typeof price !== 'number' || isNaN(price) || price <= 0) return;
-            const list = currentDataRef.current;
-            if (!list || list.length === 0) return;
-            const lastBar = list[list.length - 1];
-            const updatedBar = {
-              ...lastBar,
-              close: price,
-              high: Math.max(lastBar.high, price),
-              low: Math.min(lastBar.low, price)
-            };
-            list[list.length - 1] = updatedBar;
-            series.update(updatedBar);
-            priceBoxPrimitive.update(price, price >= updatedBar.open);
-            setOhlcInfo(computeOHLCInfo(list, list.length - 1));
-          },
+          updateLastBarPrice: updateLiveTickPrice,
           setData: (newData) => {
             series.setData(newData);
             currentDataRef.current = [...newData];

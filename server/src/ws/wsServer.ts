@@ -28,6 +28,11 @@ export function setupWebSocketServer(httpServer: HttpServer): WebSocketServer {
 
   wss.on('connection', (ws: WebSocket) => {
     const clientId = crypto.randomUUID();
+    (ws as any).isAlive = true;
+
+    ws.on('pong', () => {
+      (ws as any).isAlive = true;
+    });
 
     // 1. Connection acknowledgement
     const ackMessage: WebSocketMessage = {
@@ -48,6 +53,7 @@ export function setupWebSocketServer(httpServer: HttpServer): WebSocketServer {
 
     ws.on('message', (data: Buffer | string) => {
       try {
+        (ws as any).isAlive = true;
         const parsed = JSON.parse(data.toString()) as WebSocketMessage;
 
         if (parsed.type === 'PING') {
@@ -56,6 +62,12 @@ export function setupWebSocketServer(httpServer: HttpServer): WebSocketServer {
             timestamp: new Date().toISOString()
           };
           ws.send(JSON.stringify(pongMessage));
+        } else if (parsed.type === 'SUBSCRIBE' && Array.isArray((parsed as any).symbols)) {
+          for (const sym of (parsed as any).symbols) {
+            if (typeof sym === 'string' && sym.trim()) {
+              marketEngine.addMonitoredSymbol(sym.trim());
+            }
+          }
         }
       } catch (err) {
         console.error('Failed to parse incoming WebSocket message:', err);
@@ -69,6 +81,24 @@ export function setupWebSocketServer(httpServer: HttpServer): WebSocketServer {
     ws.on('error', (error) => {
       console.error(`WebSocket error on client ${clientId}:`, error);
     });
+  });
+
+  // Server-side keepalive ping every 25s (prevents Render.com idle connection terminations)
+  const pingInterval = setInterval(() => {
+    wss.clients.forEach((client) => {
+      const c = client as any;
+      if (c.isAlive === false) {
+        return client.terminate();
+      }
+      c.isAlive = false;
+      try {
+        client.ping();
+      } catch {}
+    });
+  }, 25000);
+
+  wss.on('close', () => {
+    clearInterval(pingInterval);
   });
 
   return wss;

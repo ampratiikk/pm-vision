@@ -12,11 +12,17 @@ export type WebSocketMessageType =
   | 'PONG'
   | 'SYSTEM_MESSAGE'
   | 'MARKET_SNAPSHOT'
-  | 'MARKET_TICK';
+  | 'MARKET_TICK'
+  | 'SUBSCRIBE';
 
 export interface BaseWebSocketMessage {
   type: WebSocketMessageType;
   timestamp: string;
+}
+
+export interface SubscribeMessage extends BaseWebSocketMessage {
+  type: 'SUBSCRIBE';
+  symbols: string[];
 }
 
 export interface ConnectAckMessage extends BaseWebSocketMessage {
@@ -133,7 +139,8 @@ export type WebSocketMessage =
   | PongMessage
   | SystemMessage
   | MarketSnapshotMessage
-  | MarketTickMessage;
+  | MarketTickMessage
+  | SubscribeMessage;
 
 /**
  * Official NSE Trading Holidays for Equity and F&O segments

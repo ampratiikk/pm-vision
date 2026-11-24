@@ -11,8 +11,14 @@ import { FyersBrokerProvider, isIndianMarketOpen } from './broker/FyersBrokerPro
 
 export class MarketEngine {
   private timer: NodeJS.Timeout | null = null;
-  private intervalMs: number = 1000;
+  private optionTimer: NodeJS.Timeout | null = null;
+  private intervalMs: number = 1500;
   private listeners: Array<(payload: MarketSnapshotPayload) => void> = [];
+  private lastOffMarketBroadcast: number = 0;
+
+  // Active symbols monitored for live streaming
+  private monitoredSymbols: Set<string> = new Set(['NSE:NIFTY50-INDEX']);
+  private customQuotes: Map<string, SecurityQuote> = new Map();
 
   // Underlying Market State (real official NSE closing levels)
   private spotPrice: number = 25349.65;
@@ -63,9 +69,29 @@ export class MarketEngine {
     return this.brokerProvider;
   }
 
-  public async syncWithBroker(expiryTimestamp?: string): Promise<void> {
+  /**
+   * Register a symbol for real-time live streaming quotes
+   */
+  public addMonitoredSymbol(symbol: string): void {
+    if (!symbol) return;
+    const fyersSym = this.brokerProvider.toFyersSymbol(symbol);
+    if (!this.monitoredSymbols.has(fyersSym)) {
+      this.monitoredSymbols.add(fyersSym);
+      console.log(`[MarketEngine] Subscribed to live quotes for: ${symbol} (${fyersSym})`);
+      if (this.brokerProvider.isConnected()) {
+        this.syncQuotes().catch(() => {});
+      }
+    }
+  }
+
+  /**
+   * Fast quote synchronization (runs every 1.5s during market hours)
+   */
+  public async syncQuotes(): Promise<void> {
+    if (!this.brokerProvider.isConnected()) return;
     try {
-      const quotes = await this.brokerProvider.fetchQuotes(['NSE:NIFTY50-INDEX']);
+      const symbols = Array.from(this.monitoredSymbols);
+      const quotes = await this.brokerProvider.fetchQuotes(symbols);
       const nifty = quotes.find((q) => q.symbol === 'NSE:NIFTY50-INDEX');
       if (nifty && nifty.ltp > 0) {
         this.spotPrice = nifty.ltp;
@@ -73,6 +99,7 @@ export class MarketEngine {
         this.spotHigh = nifty.high || nifty.ltp;
         this.spotLow = nifty.low || nifty.ltp;
         this.spotPrevClose = parseFloat((nifty.ltp - nifty.change).toFixed(2));
+        this.spotVwap = nifty.vwap || this.spotVwap;
         this.activeCandle = {
           time: Math.floor(Date.now() / 1000),
           open: this.spotOpen,
@@ -82,6 +109,28 @@ export class MarketEngine {
         };
       }
 
+      for (const q of quotes) {
+        if (q.symbol !== 'NSE:NIFTY50-INDEX') {
+          this.customQuotes.set(q.symbol, q);
+          // Also set bare symbol name (e.g. RELIANCE, TCS)
+          const bare = q.symbol.replace(/^NSE:/, '').replace(/-EQ$/, '').replace(/-INDEX$/, '');
+          this.customQuotes.set(bare, { ...q, symbol: bare });
+        }
+      }
+
+      const payload = this.buildPayload();
+      this.notifyListeners(payload);
+    } catch (err) {
+      console.error('[MarketEngine] Quote sync error:', err);
+    }
+  }
+
+  /**
+   * Option chain synchronization (runs every 30s during market hours)
+   */
+  public async syncOptionChain(expiryTimestamp?: string): Promise<void> {
+    if (!this.brokerProvider.isConnected()) return;
+    try {
       const chainData = await this.brokerProvider.fetchOptionChain(expiryTimestamp || this.selectedExpiry);
       if (chainData) {
         if (chainData.rows.length > 0) {
@@ -97,7 +146,15 @@ export class MarketEngine {
           this.fut1Spread = parseFloat((chainData.futPrice - chainData.spotPrice).toFixed(2));
         }
       }
+    } catch (err) {
+      console.error('[MarketEngine] Option chain sync error:', err);
+    }
+  }
 
+  public async syncWithBroker(expiryTimestamp?: string): Promise<void> {
+    try {
+      await this.syncQuotes();
+      await this.syncOptionChain(expiryTimestamp);
       console.log(`[MarketEngine] Synced FYERS: Spot=${this.spotPrice}, Spread=+${this.fut1Spread} pts, Expiries=${this.expiries.length}, Strikes=${this.cachedOptionChain?.length || 0}`);
       const payload = this.buildPayload();
       this.notifyListeners(payload);
@@ -108,7 +165,7 @@ export class MarketEngine {
 
   public async changeOptionExpiry(expiryTimestamp: string): Promise<MarketSnapshotPayload> {
     this.selectedExpiry = expiryTimestamp;
-    await this.syncWithBroker(expiryTimestamp);
+    await this.syncOptionChain(expiryTimestamp);
     const payload = this.buildPayload();
     this.notifyListeners(payload);
     return payload;
@@ -136,20 +193,39 @@ export class MarketEngine {
   public start(): void {
     if (this.timer) return;
 
+    // 1. Fast quote polling loop (every 1.5s during market hours)
     this.timer = setInterval(async () => {
-      // ONLY sync and broadcast during genuine open market hours
       if (isIndianMarketOpen()) {
-        await this.syncWithBroker();
+        await this.syncQuotes();
+      } else {
+        // Off-market keepalive: broadcast a lightweight tick every 15s to keep WebSocket connections alive on Render.com
+        const now = Date.now();
+        if (now - this.lastOffMarketBroadcast >= 15000) {
+          this.lastOffMarketBroadcast = now;
+          const payload = this.buildPayload();
+          this.notifyListeners(payload);
+        }
       }
-    }, 2500);
+    }, 1500);
 
-    console.log(`[MarketEngine] Market engine active.`);
+    // 2. Slower option chain sync loop (every 30 seconds during market hours)
+    this.optionTimer = setInterval(async () => {
+      if (isIndianMarketOpen()) {
+        await this.syncOptionChain();
+      }
+    }, 30000);
+
+    console.log(`[MarketEngine] Market engine active with fast quote loop.`);
   }
 
   public stop(): void {
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
+    }
+    if (this.optionTimer) {
+      clearInterval(this.optionTimer);
+      this.optionTimer = null;
     }
   }
 
@@ -309,9 +385,11 @@ export class MarketEngine {
       : [];
 
     const marketStatus: MarketStatus = isIndianMarketOpen() ? 'OPEN' : 'CLOSED';
+    const customList = Array.from(this.customQuotes.values());
+    const allSecurities = [...securities, ...customList];
 
     return {
-      securities,
+      securities: allSecurities,
       basisSpreads,
       optionChain,
       expiries: this.expiries,

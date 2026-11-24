@@ -9,7 +9,7 @@ import {
   MarketSessionInfo
 } from '@pm-vision/shared';
 import { fetchHealth, fetchMarketHistory, fetchOptionChainByExpiry, fetchMarketStatus } from './services/api';
-import { createWebSocketConnection } from './services/websocket';
+import { createWebSocketConnection, WebSocketClient } from './services/websocket';
 import {
   CandlestickChart,
   SAMPLE_CANDLESTICK_DATA,
@@ -202,6 +202,7 @@ export function App() {
   // Chart Historical Data State
   const [chartCandles, setChartCandles] = useState<CandlestickData<Time>[]>(SAMPLE_CANDLESTICK_DATA);
   const chartRef = useRef<ChartImperativeHandle | null>(null);
+  const wsClientRef = useRef<WebSocketClient | null>(null);
 
   // Resize State
   const [sidebarWidth, setSidebarWidth] = useState<number>(500);
@@ -457,26 +458,28 @@ export function App() {
       onError: () => setWsStatus('offline'),
       onMessage: (msg: WebSocketMessage) => {
         if (msg.type === 'MARKET_SNAPSHOT' || msg.type === 'MARKET_TICK') {
-          const data = msg.data;
+          const data = (msg as any).data;
           if (data) {
-            setSecurities(data.securities);
-            setBasisSpreads(data.basisSpreads);
-            setOptionChain(data.optionChain);
-            setSpotPrice(data.spotPrice);
+            if (data.securities) setSecurities(data.securities);
+            if (data.basisSpreads) setBasisSpreads(data.basisSpreads);
+            if (data.optionChain) setOptionChain(data.optionChain);
+            if (typeof data.spotPrice === 'number' && data.spotPrice > 0) setSpotPrice(data.spotPrice);
 
             if (data.expiries && data.expiries.length > 0) setExpiries(data.expiries);
             if (data.selectedExpiry) setSelectedExpiry(data.selectedExpiry);
 
-            // Real-time chart candle updates:
-            // 1. When Indian markets are closed, domestic symbols (NIFTY 50, stocks) MUST remain clean & static!
-            // 2. Only during genuine open market hours: update the current active candle in-place without creating extra bars!
+            // Real-time chart candle updates during genuine open market hours
             if (data.marketStatus === 'OPEN' && chartRef.current) {
-              const sec = data.securities?.find(
-                (s) => s.symbol.toUpperCase() === activeChartSymbolRef.current.toUpperCase()
-              );
+              const currentSym = activeChartSymbolRef.current.toUpperCase();
+              const sec = data.securities?.find((s: SecurityQuote) => {
+                const sUpper = s.symbol.toUpperCase();
+                const bare = sUpper.replace(/^NSE:/, '').replace(/-EQ$/, '').replace(/-INDEX$/, '');
+                return sUpper === currentSym || bare === currentSym;
+              });
+
               if (sec && sec.ltp > 0) {
                 chartRef.current.updateLastBarPrice(sec.ltp);
-              } else if (activeChartSymbolRef.current === 'NIFTY 50' && data.spotPrice > 0) {
+              } else if (currentSym === 'NIFTY 50' && data.spotPrice > 0) {
                 chartRef.current.updateLastBarPrice(data.spotPrice);
               }
             }
@@ -485,10 +488,21 @@ export function App() {
       }
     });
 
+    wsClientRef.current = client;
+    client.subscribe([activeChartSymbolRef.current]);
+
     return () => {
+      wsClientRef.current = null;
       client.close();
     };
   }, [loadHistory]);
+
+  // Dynamically subscribe to active symbol on WebSocket whenever active chart symbol changes
+  useEffect(() => {
+    if (activeChartSymbol) {
+      wsClientRef.current?.subscribe([activeChartSymbol]);
+    }
+  }, [activeChartSymbol]);
 
   // Global mouse move & up handlers for border dragging
   useEffect(() => {
