@@ -45,14 +45,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const handleAutoLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!autoPin.trim() || !autoTotpKey.trim()) return;
     setAutoSubmitting(true);
     setAutoMessage(null);
     try {
       const res = await executeAutoLogin({
-        fyId: autoFyId.trim(),
-        pin: autoPin.trim(),
-        totpKey: autoTotpKey.trim()
+        fyId: autoFyId.trim() || undefined,
+        pin: autoPin.trim() || undefined,
+        totpKey: autoTotpKey.trim() || undefined
       });
       if (res.connected) {
         setAutoMessage({ type: 'success', text: res.message || 'Headless login successful! FYERS Connected.' });
@@ -411,7 +410,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           type="password"
                           value={autoPin}
                           onChange={(e) => setAutoPin(e.target.value)}
-                          placeholder="e.g. 1234"
+                          placeholder="Saved on server (or enter new)"
                           maxLength={6}
                           style={{
                             width: '100%',
@@ -436,7 +435,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         type="password"
                         value={autoTotpKey}
                         onChange={(e) => setAutoTotpKey(e.target.value)}
-                        placeholder="32-character key from FYERS 2FA setup..."
+                        placeholder="Saved on server (or enter new key)"
                         style={{
                           width: '100%',
                           boxSizing: 'border-box',
@@ -454,7 +453,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '2px' }}>
                       <button
                         type="submit"
-                        disabled={autoSubmitting || !autoPin.trim() || !autoTotpKey.trim()}
+                        disabled={autoSubmitting}
                         style={{
                           padding: '6px 16px',
                           fontSize: '0.72rem',
@@ -462,13 +461,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           color: '#ffffff',
                           border: 'none',
                           borderRadius: '3px',
-                          cursor: autoSubmitting || !autoPin.trim() || !autoTotpKey.trim() ? 'not-allowed' : 'pointer',
+                          cursor: autoSubmitting ? 'not-allowed' : 'pointer',
                           fontWeight: 600,
-                          opacity: autoSubmitting || !autoPin.trim() || !autoTotpKey.trim() ? 0.6 : 1,
+                          opacity: autoSubmitting ? 0.6 : 1,
                           transition: 'all 0.15s ease'
                         }}
                       >
-                        {autoSubmitting ? 'Authenticating Headlessly...' : 'Save & Run Auto-Login'}
+                        {autoSubmitting ? 'Authenticating Headlessly...' : 'Run Headless Auto-Login Now'}
                       </button>
                     </div>
 

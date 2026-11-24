@@ -75,18 +75,26 @@ export class FyersAutoLoginService {
     try {
       console.log(`[AutoLogin] Initiating headless login for ${fyId}...`);
 
-      // 1. send_login_otp
-      const otpRes = await fetch('https://api-t2.fyers.in/vagator/v2/send_login_otp', {
+      const headers = {
+        'Accept': 'application/json',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36',
+        'Content-Type': 'application/json'
+      };
+
+      // 1. send_login_otp_v2 with base64 encoded fyId
+      const b64FyId = Buffer.from(fyId).toString('base64');
+      const otpRes = await fetch('https://api-t2.fyers.in/vagator/v2/send_login_otp_v2', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
-          fy_id: fyId,
+          fy_id: b64FyId,
           app_id: '2'
         })
       });
-      const otpJson = await otpRes.json();
+      const otpJson: any = await otpRes.json();
       if (!otpJson.request_key) {
-        return { success: false, message: otpJson.message || 'send_login_otp failed' };
+        return { success: false, message: otpJson.message || 'send_login_otp_v2 failed' };
       }
       let requestKey = otpJson.request_key;
 
@@ -97,47 +105,50 @@ export class FyersAutoLoginService {
       // 3. verify_otp (verify TOTP)
       const verifyTotpRes = await fetch('https://api-t2.fyers.in/vagator/v2/verify_otp', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           request_key: requestKey,
           otp: totpCode
         })
       });
-      const verifyTotpJson = await verifyTotpRes.json();
+      const verifyTotpJson: any = await verifyTotpRes.json();
       if (!verifyTotpJson.request_key) {
         return { success: false, message: verifyTotpJson.message || 'verify_otp failed' };
       }
       requestKey = verifyTotpJson.request_key;
 
-      // 4. verify_pin
-      const verifyPinRes = await fetch('https://api-t2.fyers.in/vagator/v2/verify_pin', {
+      // 4. verify_pin_v2 with base64 encoded identifier
+      const b64Pin = Buffer.from(pin).toString('base64');
+      const verifyPinRes = await fetch('https://api-t2.fyers.in/vagator/v2/verify_pin_v2', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           request_key: requestKey,
           identity_type: 'pin',
-          pin: pin
+          identifier: b64Pin
         })
       });
-      const verifyPinJson = await verifyPinRes.json();
+      const verifyPinJson: any = await verifyPinRes.json();
       if (!verifyPinJson.data || !verifyPinJson.data.access_token) {
-        return { success: false, message: verifyPinJson.message || 'verify_pin failed. Check your PIN.' };
+        return { success: false, message: verifyPinJson.message || 'verify_pin_v2 failed. Check your PIN.' };
       }
       const intermediateToken = verifyPinJson.data.access_token;
 
-      // 5. request auth token (v3/token)
+      // 5. request auth token (api-t1.fyers.in/api/v3/token)
       const clientId = appId.includes('-') ? appId.split('-')[0] : appId;
       const appType = appId.includes('-') ? appId.split('-')[1] : '100';
 
-      const tokenRes = await fetch('https://api.fyers.in/api/v3/token', {
+      const tokenRes = await fetch('https://api-t1.fyers.in/api/v3/token', {
         method: 'POST',
+        redirect: 'manual',
         headers: {
-          'Content-Type': 'application/json',
+          ...headers,
+          'Content-Type': 'application/json; charset=UTF-8',
           Authorization: `Bearer ${intermediateToken}`
         },
         body: JSON.stringify({
-          fyers_id: clientId,
-          app_id: appId,
+          fyers_id: fyId,
+          app_id: clientId,
           redirect_uri: redirectUri,
           appType: appType,
           code_challenge: '',
@@ -148,7 +159,13 @@ export class FyersAutoLoginService {
           create_cookie: true
         })
       });
-      const tokenJson = await tokenRes.json();
+      const tokenText = await tokenRes.text();
+      let tokenJson: any = {};
+      try {
+        tokenJson = JSON.parse(tokenText);
+      } catch {
+        return { success: false, message: 'Invalid response from token endpoint' };
+      }
       const redirectUrl = tokenJson.Url || tokenJson.url;
       if (!redirectUrl) {
         return { success: false, message: tokenJson.message || 'Failed to retrieve auth redirect URL' };
@@ -166,14 +183,14 @@ export class FyersAutoLoginService {
       const appIdHash = crypto.createHash('sha256').update(`${appId}:${secretKey}`).digest('hex');
       const validateRes = await fetch('https://api-t1.fyers.in/api/v3/validate-authcode', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           grant_type: 'authorization_code',
           appIdHash,
           code: authCode
         })
       });
-      const validateJson = await validateRes.json();
+      const validateJson: any = await validateRes.json();
       if (validateJson.s !== 'ok' || !validateJson.access_token) {
         return { success: false, message: validateJson.message || 'validate-authcode failed' };
       }
@@ -183,18 +200,24 @@ export class FyersAutoLoginService {
 
       // Update .env if present
       try {
-        const envPath = path.resolve(process.cwd(), 'server/.env');
-        if (fs.existsSync(envPath)) {
-          let content = fs.readFileSync(envPath, 'utf8');
-          if (content.includes('FYERS_ACCESS_TOKEN=')) {
-            content = content.replace(/FYERS_ACCESS_TOKEN=.*/, `FYERS_ACCESS_TOKEN=${finalAccessToken}`);
-          } else {
-            content += `\nFYERS_ACCESS_TOKEN=${finalAccessToken}\n`;
+        const candidatePaths = [
+          path.resolve(process.cwd(), 'server/.env'),
+          path.resolve(process.cwd(), '.env')
+        ];
+        for (const envPath of candidatePaths) {
+          if (fs.existsSync(envPath)) {
+            let content = fs.readFileSync(envPath, 'utf8');
+            if (content.includes('FYERS_ACCESS_TOKEN=')) {
+              content = content.replace(/FYERS_ACCESS_TOKEN=.*/, `FYERS_ACCESS_TOKEN=${finalAccessToken}`);
+            } else {
+              content += `\nFYERS_ACCESS_TOKEN=${finalAccessToken}\n`;
+            }
+            fs.writeFileSync(envPath, content, 'utf8');
+            break;
           }
-          fs.writeFileSync(envPath, content, 'utf8');
         }
       } catch (e) {
-        console.warn('[AutoLogin] Could not write to server/.env:', e);
+        console.warn('[AutoLogin] Could not write to .env:', e);
       }
 
       process.env.FYERS_ACCESS_TOKEN = finalAccessToken;
