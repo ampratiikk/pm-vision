@@ -255,6 +255,31 @@ class PriceBoxPrimitive implements ISeriesPrimitive<Time> {
   }
 }
 
+/**
+ * Reset chart view focusing on recent bars with generous right offset space from Y-axis
+ */
+function resetChartView(chartApi: IChartApi | null, dataLength: number) {
+  if (!chartApi || dataLength <= 0) return;
+  try {
+    const rightOffset = 18; // Generous space between latest candle and Y-axis
+    chartApi.timeScale().applyOptions({ rightOffset });
+    chartApi.priceScale('right').applyOptions({ autoScale: true });
+    chartApi.priceScale('right').setAutoScale(true);
+
+    const visibleBars = Math.min(dataLength, 75);
+    const lastIndex = dataLength - 1;
+    const fromIndex = Math.max(0, lastIndex - visibleBars);
+    const toIndex = lastIndex + rightOffset;
+
+    chartApi.timeScale().setVisibleLogicalRange({
+      from: fromIndex,
+      to: toIndex
+    });
+  } catch (e) {
+    console.warn('[CandlestickChart] Error resetting chart view:', e);
+  }
+}
+
 export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickChartProps>(
   (
     {
@@ -312,7 +337,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
             lineWidth: 1,
             lineStyle: LineStyle.Dashed,
             axisLabelVisible: true,
-            title: 'CAS'
+            title: '' // Removed "CAS" label name; displays only the price value on the Y axis
           });
           casPriceLineRef.current = line;
         } catch (e) {
@@ -583,21 +608,13 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
             setOhlcInfo(computeOHLCInfo(clean, clean.length - 1));
             syncIndicators(clean, indicators);
             syncCasPriceLine(currentCas, currentTf);
-            try {
-              chartRef.current?.timeScale().fitContent();
-              chartRef.current?.timeScale().applyOptions({ rightOffset: 15 });
-              chartRef.current?.priceScale('right').applyOptions({ autoScale: true });
-            } catch {}
+            resetChartView(chartRef.current, clean.length);
           } catch (err) {
             console.error('Error applying chart data:', err);
           }
         },
         fitContent: () => {
-          try {
-            chartRef.current?.timeScale().fitContent();
-            chartRef.current?.timeScale().applyOptions({ rightOffset: 15 });
-            chartRef.current?.priceScale('right').applyOptions({ autoScale: true });
-          } catch {}
+          resetChartView(chartRef.current, currentDataRef.current.length);
         },
         applySeriesOptions: (opts) => {
           seriesRef.current?.applyOptions(opts);
@@ -743,9 +760,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
         currentDataRef.current = cleanInitial;
         syncIndicators(cleanInitial, indicators);
       }
-      chart.timeScale().fitContent();
-      chart.timeScale().applyOptions({ rightOffset: 15 });
-      chart.priceScale('right').applyOptions({ autoScale: true });
+      resetChartView(chart, cleanInitial.length);
 
       // Attach custom price box primitive for dynamic positive/negative price box with #5F7A9A border
       const lastBar = cleanInitial.length > 0 ? cleanInitial[cleanInitial.length - 1] : null;
@@ -884,9 +899,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
             setOhlcInfo(computeOHLCInfo(newData, newData.length - 1));
           },
           fitContent: () => {
-            chart.timeScale().fitContent();
-            chart.timeScale().applyOptions({ rightOffset: 15 });
-            chart.priceScale('right').applyOptions({ autoScale: true });
+            resetChartView(chart, currentDataRef.current.length);
           },
           applySeriesOptions: (opts) => series.applyOptions(opts),
           getChart: () => chart,
@@ -993,17 +1006,12 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
             setOhlcInfo(computeOHLCInfo(clean, clean.length - 1));
             syncIndicators(clean, indicators);
             syncCasPriceLine(currentCas, currentTf);
-            try {
-              chartRef.current?.timeScale().fitContent();
-              chartRef.current?.timeScale().applyOptions({ rightOffset: 15 });
-              chartRef.current?.priceScale('right').applyOptions({ autoScale: true });
-            } catch {}
           }
         }
       } catch (err) {
         console.error('Error updating chart series data:', err);
       }
-    }, [data, indicators]);
+    }, [data]);
 
     useEffect(() => {
       if (seriesRef.current && seriesOptions) {
