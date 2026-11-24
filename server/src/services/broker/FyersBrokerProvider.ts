@@ -1,5 +1,10 @@
+import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import { IBrokerProvider, BrokerCredentials, TickCallback } from './IBrokerProvider.js';
-import { MarketTick, OptionRow, ExpiryOption, ChartCandleTick } from '@pm-vision/shared';
+import { MarketTick, OptionRow, ExpiryOption, ChartCandleTick, isIndianMarketOpen } from '@pm-vision/shared';
+
+export { isIndianMarketOpen };
 
 export interface FyersOptionChainResult {
   spotPrice: number;
@@ -7,27 +12,6 @@ export interface FyersOptionChainResult {
   expiries: ExpiryOption[];
   selectedExpiry: string;
   rows: OptionRow[];
-}
-
-export function isIndianMarketOpen(): boolean {
-  // Convert current time to IST (UTC+5:30)
-  const now = new Date();
-  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
-  const istDate = new Date(utc + 3600000 * 5.5);
-
-  const day = istDate.getDay(); // 0 = Sunday, 6 = Saturday
-  if (day === 0 || day === 6) {
-    return false;
-  }
-
-  const hours = istDate.getHours();
-  const minutes = istDate.getMinutes();
-  const currentMinute = hours * 60 + minutes;
-
-  const marketOpenMinute = 9 * 60 + 15; // 09:15 AM IST
-  const marketCloseMinute = 15 * 60 + 30; // 03:30 PM IST
-
-  return currentMinute >= marketOpenMinute && currentMinute <= marketCloseMinute;
 }
 
 export class FyersBrokerProvider implements IBrokerProvider {
@@ -40,6 +24,87 @@ export class FyersBrokerProvider implements IBrokerProvider {
 
   public isConnected(): boolean {
     return this.connected;
+  }
+
+  public getAccessToken(): string {
+    return this.accessToken;
+  }
+
+  public async updateToken(tokenOrAuthCode: string): Promise<{ success: boolean; message: string; spotPrice?: number }> {
+    const raw = tokenOrAuthCode.trim();
+    if (!raw) {
+      return { success: false, message: 'Token or auth code cannot be empty.' };
+    }
+
+    const appId = this.appId || process.env.FYERS_APP_ID || 'R3ZD795FUR-100';
+    const secretKey = process.env.FYERS_SECRET_KEY || 'MMOAAII27N';
+    let candidateToken = raw;
+
+    // Check if input is an authorization code and exchange it
+    if (raw.length > 50) {
+      try {
+        const appIdHash = crypto.createHash('sha256').update(`${appId}:${secretKey}`).digest('hex');
+        const authRes = await fetch('https://api-t1.fyers.in/api/v3/validate-authcode', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            grant_type: 'authorization_code',
+            appIdHash,
+            code: raw
+          })
+        });
+        const authJson = await authRes.json();
+        if (authJson.s === 'ok' && authJson.access_token) {
+          candidateToken = authJson.access_token;
+          console.log('[FYERS Provider] Exchanged Auth Code for Access Token successfully!');
+        }
+      } catch (err) {
+        console.warn('[FYERS Provider] Auth code exchange check error:', err);
+      }
+    }
+
+    // Test candidateToken against FYERS quotes API
+    try {
+      const url = `https://api-t1.fyers.in/data/quotes?symbols=NSE:NIFTY50-INDEX`;
+      const res = await fetch(url, {
+        headers: {
+          Authorization: `${appId}:${candidateToken}`
+        }
+      });
+      const json = await res.json();
+      if (json.s === 'ok' && json.d && json.d.length > 0) {
+        this.appId = appId;
+        this.accessToken = candidateToken;
+        this.connected = true;
+        process.env.FYERS_ACCESS_TOKEN = candidateToken;
+
+        // Persist token to local .env if present
+        try {
+          const envPath = path.resolve(process.cwd(), 'server/.env');
+          if (fs.existsSync(envPath)) {
+            let content = fs.readFileSync(envPath, 'utf8');
+            if (content.includes('FYERS_ACCESS_TOKEN=')) {
+              content = content.replace(/FYERS_ACCESS_TOKEN=.*/, `FYERS_ACCESS_TOKEN=${candidateToken}`);
+            } else {
+              content += `\nFYERS_ACCESS_TOKEN=${candidateToken}\n`;
+            }
+            fs.writeFileSync(envPath, content, 'utf8');
+          }
+        } catch (e) {
+          console.warn('[FYERS Provider] Could not write to server/.env:', e);
+        }
+
+        const ltp = json.d[0].v?.lp || 25349.65;
+        console.log(`[FYERS Provider] Authenticated! Live NIFTY Spot: ${ltp}`);
+        return { success: true, message: 'Successfully authenticated with FYERS!', spotPrice: ltp };
+      } else {
+        this.connected = false;
+        return { success: false, message: json.message || 'FYERS rejected the token/code.' };
+      }
+    } catch (err: any) {
+      this.connected = false;
+      return { success: false, message: err?.message || 'Network error connecting to FYERS.' };
+    }
   }
 
   public async connect(credentials: BrokerCredentials): Promise<boolean> {

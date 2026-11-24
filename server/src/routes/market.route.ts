@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { marketEngine } from '../services/marketEngine.js';
-import { isIndianMarketOpen } from '../services/broker/FyersBrokerProvider.js';
+import { isIndianMarketOpen, getMarketSessionInfo } from '@pm-vision/shared';
 
 export const marketRouter = Router();
 
@@ -41,9 +41,45 @@ marketRouter.get('/option-chain', async (req: Request, res: Response) => {
 
 // GET /api/market/status
 marketRouter.get('/status', (_req: Request, res: Response) => {
+  const session = getMarketSessionInfo();
   res.json({
     status: 'ok',
     marketStatus: isIndianMarketOpen() ? 'OPEN' : 'CLOSED',
+    session,
+    isBrokerConnected: marketEngine.isBrokerConnected(),
     timestamp: new Date().toISOString()
   });
+});
+
+// POST /api/market/broker-token (Quick Update & Reconnect)
+marketRouter.post('/broker-token', async (req: Request, res: Response) => {
+  const { token, authCode } = req.body || {};
+  const input = token || authCode;
+  if (!input || typeof input !== 'string') {
+    return res.status(400).json({ status: 'error', message: 'Token or auth code is required.' });
+  }
+
+  try {
+    const result = await marketEngine.updateBrokerToken(input);
+    if (result.success) {
+      res.json({
+        status: 'ok',
+        connected: true,
+        message: result.message,
+        spotPrice: result.spotPrice
+      });
+    } else {
+      res.status(400).json({
+        status: 'error',
+        connected: false,
+        message: result.message
+      });
+    }
+  } catch (err: any) {
+    res.status(500).json({
+      status: 'error',
+      connected: false,
+      message: err?.message || 'Failed to authenticate token.'
+    });
+  }
 });

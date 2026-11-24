@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { CandleColorSettings } from '../chart/types';
 import { TradingViewColorPicker } from './TradingViewColorPicker';
+import { updateBrokerToken } from '../../services/api';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -10,6 +11,8 @@ interface SettingsModalProps {
   onResetCandleColors: () => void;
   apiStatus: 'online' | 'offline' | 'loading';
   wsStatus: 'online' | 'offline' | 'loading';
+  isBrokerConnected?: boolean;
+  onBrokerConnected?: () => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -19,11 +22,36 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onUpdateCandleColors,
   onResetCandleColors,
   apiStatus,
-  wsStatus
+  wsStatus,
+  isBrokerConnected = false,
+  onBrokerConnected
 }) => {
   const [activeTab, setActiveTab] = useState<'chart' | 'system'>('chart');
+  const [tokenInput, setTokenInput] = useState('');
+  const [tokenSubmitting, setTokenSubmitting] = useState(false);
+  const [tokenMessage, setTokenMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   if (!isOpen) return null;
+
+  const handleTokenSubmit = async () => {
+    if (!tokenInput.trim()) return;
+    setTokenSubmitting(true);
+    setTokenMessage(null);
+    try {
+      const res = await updateBrokerToken(tokenInput.trim());
+      if (res.connected) {
+        setTokenMessage({ type: 'success', text: res.message || 'Successfully connected to FYERS!' });
+        setTokenInput('');
+        if (onBrokerConnected) onBrokerConnected();
+      } else {
+        setTokenMessage({ type: 'error', text: res.message || 'Failed to authenticate token.' });
+      }
+    } catch (err: any) {
+      setTokenMessage({ type: 'error', text: err?.message || 'Network error updating token.' });
+    } finally {
+      setTokenSubmitting(false);
+    }
+  };
 
   return (
     <div style={{
@@ -206,15 +234,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </>
           ) : (
             /* System Status Tab */
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
               <div style={{
                 backgroundColor: '#050505',
                 border: '1px solid #1a1a1a',
                 borderRadius: '4px',
-                padding: '1rem',
+                padding: '0.85rem',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '0.75rem'
+                gap: '0.65rem'
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem' }}>
                   <span style={{ color: '#737373' }}>API Server:</span>
@@ -243,9 +271,92 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem' }}>
+                  <span style={{ color: '#737373' }}>Broker Data Feed:</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{
+                      width: '6px',
+                      height: '6px',
+                      borderRadius: '50%',
+                      backgroundColor: isBrokerConnected ? '#10b981' : '#ef4444'
+                    }} />
+                    <span style={{ color: isBrokerConnected ? '#10b981' : '#ef4444', fontWeight: 600 }}>
+                      {isBrokerConnected ? 'FYERS Connected' : 'FYERS Token Expired'}
+                    </span>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem' }}>
                   <span style={{ color: '#737373' }}>Exchange:</span>
                   <span style={{ color: '#ffffff' }}>NSE (National Stock Exchange of India)</span>
                 </div>
+              </div>
+
+              {/* Quick Token Update Section */}
+              <div style={{
+                backgroundColor: '#050505',
+                border: '1px solid #1a1a1a',
+                borderRadius: '4px',
+                padding: '0.85rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.6rem'
+              }}>
+                <div style={{ fontSize: '0.70rem', fontWeight: 700, color: '#e5e7eb', letterSpacing: '0.04em' }}>
+                  RECONNECT FYERS DATA FEED
+                </div>
+                <div style={{ fontSize: '0.68rem', color: '#737373', lineHeight: 1.4 }}>
+                  FYERS access tokens expire daily after 06:00 AM IST. Paste your fresh Access Token or Auth Code below to reconnect live feeds instantly without redeploying.
+                </div>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <input
+                    type="password"
+                    value={tokenInput}
+                    onChange={(e) => setTokenInput(e.target.value)}
+                    placeholder="Paste FYERS Access Token or Auth Code..."
+                    style={{
+                      flex: 1,
+                      backgroundColor: '#121212',
+                      border: '1px solid #262626',
+                      borderRadius: '3px',
+                      color: '#ffffff',
+                      fontSize: '0.72rem',
+                      padding: '6px 8px',
+                      outline: 'none'
+                    }}
+                  />
+                  <button
+                    type="button"
+                    disabled={tokenSubmitting || !tokenInput.trim()}
+                    onClick={handleTokenSubmit}
+                    style={{
+                      padding: '6px 14px',
+                      fontSize: '0.72rem',
+                      backgroundColor: '#5F7A9A',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '3px',
+                      cursor: tokenSubmitting || !tokenInput.trim() ? 'not-allowed' : 'pointer',
+                      fontWeight: 600,
+                      opacity: tokenSubmitting || !tokenInput.trim() ? 0.6 : 1,
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    {tokenSubmitting ? 'Verifying...' : 'Connect'}
+                  </button>
+                </div>
+
+                {tokenMessage && (
+                  <div style={{
+                    fontSize: '0.68rem',
+                    color: tokenMessage.type === 'success' ? '#10b981' : '#ef4444',
+                    padding: '5px 8px',
+                    backgroundColor: tokenMessage.type === 'success' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                    borderRadius: '3px',
+                    border: `1px solid ${tokenMessage.type === 'success' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
+                  }}>
+                    {tokenMessage.text}
+                  </div>
+                )}
               </div>
             </div>
           )}

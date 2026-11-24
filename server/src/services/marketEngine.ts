@@ -100,6 +100,8 @@ export class MarketEngine {
       }
 
       console.log(`[MarketEngine] Synced FYERS: Spot=${this.spotPrice}, Spread=+${this.fut1Spread} pts, Expiries=${this.expiries.length}, Strikes=${this.cachedOptionChain?.length || 0}`);
+      const payload = this.buildPayload();
+      this.notifyListeners(payload);
     } catch (err) {
       console.error('[MarketEngine] Broker sync error:', err);
     }
@@ -120,17 +122,28 @@ export class MarketEngine {
     };
   }
 
+  public isBrokerConnected(): boolean {
+    return this.brokerProvider.isConnected();
+  }
+
+  public async updateBrokerToken(tokenOrAuthCode: string) {
+    const res = await this.brokerProvider.updateToken(tokenOrAuthCode);
+    if (res.success) {
+      await this.syncWithBroker();
+    }
+    return res;
+  }
+
   public start(): void {
     if (this.timer) return;
 
-    this.timer = setInterval(() => {
-      // ONLY generate live ticking when market is open
-      const marketOpen = isIndianMarketOpen();
-      if (marketOpen) {
-        const payload = this.generateLiveTick();
-        this.notifyListeners(payload);
+    this.timer = setInterval(async () => {
+      // ONLY sync and broadcast during genuine open market hours.
+      // On holidays, weekends, or after-hours, prices remain completely static.
+      if (isIndianMarketOpen()) {
+        await this.syncWithBroker();
       }
-    }, this.intervalMs);
+    }, 2500);
 
     console.log(`[MarketEngine] Market engine active.`);
   }
@@ -154,23 +167,6 @@ export class MarketEngine {
         console.error('[MarketEngine] Listener error:', err);
       }
     });
-  }
-
-  private generateLiveTick(): MarketSnapshotPayload {
-    // Only called when market is genuinely open
-    const delta = (Math.random() - 0.495) * 1.8;
-    this.spotPrice = parseFloat((this.spotPrice + delta).toFixed(2));
-    this.spotHigh = Math.max(this.spotHigh, this.spotPrice);
-    this.spotLow = Math.min(this.spotLow, this.spotPrice);
-    this.spotVolumeM = parseFloat((this.spotVolumeM + Math.random() * 0.003).toFixed(3));
-    this.spotVwap = parseFloat(((this.spotVwap * 0.999) + (this.spotPrice * 0.001)).toFixed(2));
-
-    this.fut1Spread = parseFloat((this.fut1Spread + (Math.random() - 0.5) * 0.25).toFixed(2));
-    this.activeCandle.close = this.spotPrice;
-    this.activeCandle.high = Math.max(this.activeCandle.high, this.spotPrice);
-    this.activeCandle.low = Math.min(this.activeCandle.low, this.spotPrice);
-
-    return this.buildPayload();
   }
 
   private buildPayload(): MarketSnapshotPayload {

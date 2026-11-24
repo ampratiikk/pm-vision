@@ -4,9 +4,11 @@ import {
   SecurityQuote,
   BasisSpreadPair,
   OptionRow,
-  ExpiryOption
+  ExpiryOption,
+  getMarketSessionInfo,
+  MarketSessionInfo
 } from '@pm-vision/shared';
-import { fetchHealth, fetchMarketHistory, fetchOptionChainByExpiry } from './services/api';
+import { fetchHealth, fetchMarketHistory, fetchOptionChainByExpiry, fetchMarketStatus } from './services/api';
 import { createWebSocketConnection } from './services/websocket';
 import {
   CandlestickChart,
@@ -44,44 +46,17 @@ const ALL_TIMEFRAMES = [
 
 const DEFAULT_PINNED = ['1m', '5m', '15m', '1H', '1D'];
 
-function getMarketSessionInfo(): { label: string; dotColor: string } {
-  const now = new Date();
-  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
-  const istDate = new Date(utc + 3600000 * 5.5);
-
-  const day = istDate.getDay(); // 0 is Sunday, 6 is Saturday
-  if (day === 0 || day === 6) {
-    return { label: 'Markets Closed', dotColor: '#ef4444' };
-  }
-
-  const currentMinute = istDate.getHours() * 60 + istDate.getMinutes();
-  const preStart = 9 * 60; // 09:00 AM
-  const normalStart = 9 * 60 + 15; // 09:15 AM
-  const normalEnd = 15 * 60 + 30; // 03:30 PM
-  const postEnd = 16 * 60; // 04:00 PM
-
-  if (currentMinute >= preStart && currentMinute < normalStart) {
-    return { label: 'Pre-Market Session', dotColor: '#eab308' };
-  }
-  if (currentMinute >= normalStart && currentMinute <= normalEnd) {
-    return { label: 'Markets Live', dotColor: '#10b981' };
-  }
-  if (currentMinute > normalEnd && currentMinute <= postEnd) {
-    return { label: 'Post-Market Session', dotColor: '#eab308' };
-  }
-  return { label: 'Markets Closed', dotColor: '#ef4444' };
-}
-
 export function App() {
   const [activePage, setActivePage] = useState<AppPage>('dashboard');
   const [healthStatus, setHealthStatus] = useState<'online' | 'offline' | 'loading'>('loading');
   const [wsStatus, setWsStatus] = useState<'online' | 'offline' | 'loading'>('loading');
+  const [isBrokerConnected, setIsBrokerConnected] = useState<boolean>(true);
   const [activeTimeFilter, setActiveTimeFilter] = useState<string>('15m');
   const [isChartLoading, setIsChartLoading] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
 
-  // Market session status (Markets Live / Markets Closed / Pre / Post)
-  const [sessionInfo, setSessionInfo] = useState<{ label: string; dotColor: string }>(getMarketSessionInfo);
+  // Market session status (Markets Live / Markets Closed / Holiday / Pre / Post)
+  const [sessionInfo, setSessionInfo] = useState<MarketSessionInfo>(getMarketSessionInfo);
 
   // Candlestick Appearance Customization
   const [candleColors, setCandleColors] = useState<CandleColorSettings>(() => {
@@ -310,11 +285,22 @@ export function App() {
     };
   }, [keyIntervalVisible, keyIntervalBuffer, isSettingsOpen, handleTimeframeChange]);
 
-  // Check market session every 30 seconds
+  // Check market session & broker status every 15 seconds
   useEffect(() => {
-    const interval = setInterval(() => {
+    const checkStatus = () => {
       setSessionInfo(getMarketSessionInfo());
-    }, 30000);
+      fetchMarketStatus()
+        .then((res) => {
+          setIsBrokerConnected(res.isBrokerConnected);
+          if (res.session) {
+            setSessionInfo(res.session);
+          }
+        })
+        .catch(() => {});
+    };
+
+    checkStatus();
+    const interval = setInterval(checkStatus, 15000);
     return () => clearInterval(interval);
   }, []);
 
@@ -1097,6 +1083,11 @@ export function App() {
         onResetCandleColors={handleResetCandleColors}
         apiStatus={healthStatus}
         wsStatus={wsStatus}
+        isBrokerConnected={isBrokerConnected}
+        onBrokerConnected={() => {
+          setIsBrokerConnected(true);
+          loadHistory(activeTimeFilter);
+        }}
       />
     </div>
   );
