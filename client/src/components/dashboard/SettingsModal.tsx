@@ -299,20 +299,46 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 padding: '0.85rem',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '0.6rem'
+                gap: '0.65rem'
               }}>
-                <div style={{ fontSize: '0.70rem', fontWeight: 700, color: '#e5e7eb', letterSpacing: '0.04em' }}>
-                  RECONNECT FYERS DATA FEED
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ fontSize: '0.70rem', fontWeight: 700, color: '#e5e7eb', letterSpacing: '0.04em' }}>
+                    RECONNECT FYERS DATA FEED
+                  </div>
+                  <a
+                    href="https://api-t1.fyers.in/api/v3/generate-authcode?client_id=R3ZD795FUR-100&redirect_uri=https://trade.fyers.in/api-login/redirect-uri/index.html&response_type=code&state=pmvision"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      fontSize: '0.68rem',
+                      color: '#5F7A9A',
+                      textDecoration: 'none',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '3px 8px',
+                      borderRadius: '3px',
+                      backgroundColor: 'rgba(95, 122, 154, 0.15)',
+                      border: '1px solid rgba(95, 122, 154, 0.3)',
+                      fontWeight: 600
+                    }}
+                  >
+                    <span>1. Log In to FYERS</span>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                  </a>
                 </div>
-                <div style={{ fontSize: '0.68rem', color: '#737373', lineHeight: 1.4 }}>
-                  FYERS access tokens expire daily after 06:00 AM IST. Paste your fresh Access Token or Auth Code below to reconnect live feeds instantly without redeploying.
+
+                <div style={{ fontSize: '0.68rem', color: '#737373', lineHeight: 1.5 }}>
+                  <b>Step 1:</b> Click <b>Log In to FYERS</b> above and sign in.<br />
+                  <b>Step 2:</b> On the redirected page, click <b>Copy</b> on the code, paste it below, and click <b>Connect</b>.
                 </div>
+
                 <div style={{ display: 'flex', gap: '6px' }}>
                   <input
                     type="password"
                     value={tokenInput}
                     onChange={(e) => setTokenInput(e.target.value)}
-                    placeholder="Paste FYERS Access Token or Auth Code..."
+                    placeholder="Paste FYERS Access Token or Auth Code here..."
                     style={{
                       flex: 1,
                       backgroundColor: '#121212',
