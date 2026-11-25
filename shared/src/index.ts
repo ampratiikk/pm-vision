@@ -108,6 +108,34 @@ export interface ChartCandleTick {
 
 export type MarketStatus = 'OPEN' | 'CLOSED';
 
+export type InstrumentCategory = 'INDEX' | 'EQUITY' | 'INDEX_FUTURES' | 'STOCK_FUTURES';
+
+export type FuturesMonthRole = 'CONTINUOUS' | 'CURRENT' | 'NEXT' | 'FAR';
+
+export interface MasterInstrument {
+  symbol: string;
+  displaySymbol: string;
+  name: string;
+  fyersSymbol: string;
+  underlying: string;
+  category: InstrumentCategory;
+  futuresRole?: FuturesMonthRole;
+  expiryDate?: string;
+  expiryLabel?: string;
+  lotSize?: number;
+  isFnO?: boolean;
+  contFlag?: boolean;
+  sector?: string;
+}
+
+export interface InstrumentCatalogResponse {
+  equities: MasterInstrument[];
+  indices: MasterInstrument[];
+  futures: MasterInstrument[];
+  fnOUnderlyings: string[];
+  updatedAt: string;
+}
+
 export interface MarketSnapshotPayload {
   securities: SecurityQuote[];
   basisSpreads: BasisSpreadPair[];

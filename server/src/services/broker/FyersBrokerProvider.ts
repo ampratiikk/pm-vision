@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { IBrokerProvider, BrokerCredentials, TickCallback } from './IBrokerProvider.js';
 import { MarketTick, OptionRow, ExpiryOption, ChartCandleTick, isIndianMarketOpen } from '@pm-vision/shared';
+import { symbolMaster } from './SymbolMasterService.js';
 
 export { isIndianMarketOpen };
 
@@ -206,70 +207,58 @@ export class FyersBrokerProvider implements IBrokerProvider {
   public async fetchQuotes(symbols: string[]): Promise<MarketTick[]> {
     if (!this.appId || !this.accessToken || symbols.length === 0) return [];
 
+    const results: MarketTick[] = [];
+    const unique = Array.from(new Set(symbols));
+    const batchSize = 45;
+
     try {
-      const url = `https://api-t1.fyers.in/data/quotes?symbols=${encodeURIComponent(symbols.join(','))}`;
-      const res = await fetch(url, {
-        headers: {
-          Authorization: `${this.appId}:${this.accessToken}`
-        },
-        signal: AbortSignal.timeout(6000)
-      });
-
-      const json: any = await res.json();
-      if (json.s !== 'ok' || !json.d) {
-        this.checkAuthError(res.status, json);
-        return [];
-      }
-
-      return json.d
-        .filter((item: any) => item && item.v && typeof item.v.lp === 'number' && item.v.lp > 0)
-        .map((item: any) => {
-          const v = item.v || {};
-          return {
-            id: item.n?.toLowerCase().replace(/[^a-z0-9]/g, '-') || 'fyers-tick',
-            name: v.short_name || item.n || 'NIFTY',
-            symbol: item.n || 'NIFTY',
-            ltp: v.lp || 0,
-            change: v.ch || 0,
-            changePct: v.chp || 0,
-            high: v.high_price || v.lp || 0,
-            low: v.low_price || v.lp || 0,
-            open: v.open_price || v.lp || 0,
-            vwap: v.atp || v.lp || 0,
-            volume: v.volume ? `${(v.volume / 1000000).toFixed(1)}M` : '0M'
-          };
+      for (let i = 0; i < unique.length; i += batchSize) {
+        const batch = unique.slice(i, i + batchSize);
+        const url = `https://api-t1.fyers.in/data/quotes?symbols=${encodeURIComponent(batch.join(','))}`;
+        const res = await fetch(url, {
+          headers: {
+            Authorization: `${this.appId}:${this.accessToken}`
+          },
+          signal: AbortSignal.timeout(6000)
         });
+
+        const json: any = await res.json();
+        if (json.s !== 'ok' || !json.d) {
+          this.checkAuthError(res.status, json);
+          continue;
+        }
+
+        for (const item of json.d) {
+          if (item && item.v && typeof item.v.lp === 'number' && item.v.lp > 0) {
+            const v = item.v || {};
+            results.push({
+              id: item.n?.toLowerCase().replace(/[^a-z0-9]/g, '-') || 'fyers-tick',
+              name: v.short_name || item.n || 'NIFTY',
+              symbol: item.n || 'NIFTY',
+              ltp: v.lp || 0,
+              change: v.ch || 0,
+              changePct: v.chp || 0,
+              high: v.high_price || v.lp || 0,
+              low: v.low_price || v.lp || 0,
+              open: v.open_price || v.lp || 0,
+              vwap: v.atp || v.lp || 0,
+              volume: v.volume ? `${(v.volume / 1000000).toFixed(1)}M` : '0M'
+            });
+          }
+        }
+      }
+      return results;
     } catch (err) {
       console.error('[FYERS Provider] Error fetching quotes:', err);
-      return [];
+      return results;
     }
   }
 
   /**
-   * Helper to map any common symbol or constituent name to a valid FYERS symbol format
+   * Helper to map any common symbol, index, equity, or futures contract to a valid FYERS symbol
    */
   public toFyersSymbol(symbol: string): string {
-    const s = symbol.trim().toUpperCase();
-    if (s.includes(':')) return s;
-    if (s === 'NIFTY 50' || s === 'NIFTY' || s === 'NIFTY50' || s === 'NIFTY FUT-I' || s === 'NIFTY FUT-II' || s === 'NIFTY FUT-III') {
-      return 'NSE:NIFTY50-INDEX';
-    }
-    if (s === 'NIFTY BANK' || s === 'BANK NIFTY' || s === 'BANKNIFTY') return 'NSE:NIFTYBANK-INDEX';
-    if (s === 'NIFTY IT') return 'NSE:NIFTYIT-INDEX';
-    if (s === 'NIFTY FIN SERVICE' || s === 'FINNIFTY') return 'NSE:FINNIFTY-INDEX';
-    if (s === 'NIFTY AUTO') return 'NSE:NIFTYAUTO-INDEX';
-    if (s === 'NIFTY FMCG') return 'NSE:NIFTYFMCG-INDEX';
-    if (s === 'NIFTY METAL') return 'NSE:NIFTYMETAL-INDEX';
-    if (s === 'NIFTY PHARMA') return 'NSE:NIFTYPHARMA-INDEX';
-    if (s === 'NIFTY ENERGY') return 'NSE:NIFTYENERGY-INDEX';
-    if (s === 'NIFTY MEDIA') return 'NSE:NIFTYMEDIA-INDEX';
-    if (s === 'NIFTY REALTY') return 'NSE:NIFTYREALTY-INDEX';
-    if (s === 'NIFTY INFRA') return 'NSE:NIFTYINFRA-INDEX';
-    if (s === 'NIFTY MIDCAP 50') return 'NSE:NIFTYMIDCAP50-INDEX';
-    if (s === 'NIFTY NEXT 50') return 'NSE:NIFTYNEXT50-INDEX';
-    if (s === 'INDIA VIX') return 'NSE:INDIAVIX-INDEX';
-    // For all equities:
-    return `NSE:${s}-EQ`;
+    return symbolMaster.resolveInstrument(symbol).fyersSymbol;
   }
 
   /**
@@ -278,6 +267,7 @@ export class FyersBrokerProvider implements IBrokerProvider {
    */
   public async fetchHistory(resolution: string = 'D', symbol: string = 'NIFTY 50'): Promise<ChartCandleTick[]> {
     if (!this.appId || !this.accessToken) return [];
+    await symbolMaster.ensureLoaded();
 
     let fyersRes = 'D';
     let lookbackDays = 365; // 1 full year for daily
@@ -325,17 +315,34 @@ export class FyersBrokerProvider implements IBrokerProvider {
 
       const toStr = istNow.toISOString().slice(0, 10);
       const fromStr = istFrom.toISOString().slice(0, 10);
-      const mappedSymbol = this.toFyersSymbol(symbol);
+      const resolved = symbolMaster.resolveInstrument(symbol);
+      const mappedSymbol = resolved.fyersSymbol;
+      const isContractFuture =
+        (resolved.instrument?.category === 'INDEX_FUTURES' || resolved.instrument?.category === 'STOCK_FUTURES') &&
+        !resolved.contFlag;
 
-      const url = `https://api-t1.fyers.in/data/history?symbol=${encodeURIComponent(mappedSymbol)}&resolution=${fyersRes}&date_format=1&range_from=${fromStr}&range_to=${toStr}&cont_flag=1`;
-      const res = await fetch(url, {
-        headers: {
-          Authorization: `${this.appId}:${this.accessToken}`
-        },
-        signal: AbortSignal.timeout(8000)
-      });
+      const callHistory = async (contFlagVal: '0' | '1') => {
+        const url = `https://api-t1.fyers.in/data/history?symbol=${encodeURIComponent(mappedSymbol)}&resolution=${fyersRes}&date_format=1&range_from=${fromStr}&range_to=${toStr}&cont_flag=${contFlagVal}`;
+        const res = await fetch(url, {
+          headers: {
+            Authorization: `${this.appId}:${this.accessToken}`
+          },
+          signal: AbortSignal.timeout(8000)
+        });
+        const json: any = await res.json();
+        return { res, json };
+      };
 
-      const json: any = await res.json();
+      const initialContFlag: '0' | '1' = isContractFuture ? '0' : '1';
+      let { res, json } = await callHistory(initialContFlag);
+
+      // If continuous flag fails for a futures contract, retry cleanly with contract-specific flag
+      if ((json.s !== 'ok' || !Array.isArray(json.candles) || json.candles.length === 0) && initialContFlag === '1' && !this.checkAuthError(res.status, json)) {
+        const retry = await callHistory('0');
+        res = retry.res;
+        json = retry.json;
+      }
+
       if (json.s !== 'ok' || !json.candles || !Array.isArray(json.candles)) {
         this.checkAuthError(res.status, json);
         return [];

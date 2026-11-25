@@ -9,6 +9,7 @@ import {
 } from '@pm-vision/shared';
 import { FyersBrokerProvider, isIndianMarketOpen } from './broker/FyersBrokerProvider.js';
 import { PublicMarketDataProvider } from './broker/PublicMarketDataProvider.js';
+import { symbolMaster } from './broker/SymbolMasterService.js';
 
 const CORE_PUBLIC_SYMBOLS = [
   'NIFTY 50', 'NIFTY BANK', 'NIFTY FIN SERVICE', 'NIFTY NEXT 50', 'NIFTY MIDCAP 50',
@@ -78,7 +79,16 @@ export class MarketEngine {
     this.brokerProvider = new FyersBrokerProvider();
     this.publicProvider = new PublicMarketDataProvider();
 
-    this.brokerProvider.connect({}).then(async (connected: boolean) => {
+    Promise.all([
+      symbolMaster.ensureLoaded(),
+      this.brokerProvider.connect({})
+    ]).then(async ([, connected]) => {
+      // Ensure NIFTY Current/Next/Far futures are monitored alongside Spot
+      const niftyContracts = symbolMaster.getNiftyMonthlyContracts();
+      if (niftyContracts.current) this.monitoredSymbols.add(niftyContracts.current.fyersSymbol);
+      if (niftyContracts.next) this.monitoredSymbols.add(niftyContracts.next.fyersSymbol);
+      if (niftyContracts.far) this.monitoredSymbols.add(niftyContracts.far.fyersSymbol);
+
       if (connected) {
         console.log('[MarketEngine] FYERS authenticated. Syncing real exchange data...');
         await this.syncWithBroker();
@@ -104,13 +114,18 @@ export class MarketEngine {
 
   /**
    * Unified history retrieval: tries FYERS first if connected, otherwise transparently
-   * falls back to real public NSE/Yahoo historical data so charts always display accurate candles.
+   * falls back to real public NSE/Yahoo historical data for cash stocks & indices.
+   * Futures contracts (Index/Stock) require live FYERS broker connection.
    */
   public async fetchHistory(
     resolution: string = '15m',
     symbol: string = 'NIFTY 50'
-  ): Promise<{ candles: ChartCandleTick[]; casPrice?: number; source: 'FYERS' | 'PUBLIC' }> {
+  ): Promise<{ candles: ChartCandleTick[]; casPrice?: number; source: 'FYERS' | 'PUBLIC'; requiresBroker?: boolean }> {
+    await symbolMaster.ensureLoaded();
     const cleanSym = symbol.trim();
+    const upper = cleanSym.toUpperCase();
+    const resolved = symbolMaster.resolveInstrument(cleanSym);
+
     let candles: ChartCandleTick[] = [];
     let source: 'FYERS' | 'PUBLIC' = 'PUBLIC';
     let metaPrice: number | undefined;
@@ -123,14 +138,24 @@ export class MarketEngine {
       }
     }
 
+    const isGenuineFutureContract =
+      resolved.instrument &&
+      (resolved.instrument.category === 'INDEX_FUTURES' || resolved.instrument.category === 'STOCK_FUTURES') &&
+      upper !== 'NIFTY FUT-I' &&
+      upper !== 'NIFTY FUT-II' &&
+      upper !== 'NIFTY FUT-III';
+
+    if (candles.length === 0 && !this.brokerProvider.isConnected() && isGenuineFutureContract) {
+      return { candles: [], source: 'PUBLIC', requiresBroker: true };
+    }
+
     if (candles.length === 0) {
       const pubRes = await this.publicProvider.fetchHistoryWithMeta(resolution, cleanSym);
       candles = pubRes.candles;
       metaPrice = pubRes.regularMarketPrice;
       source = 'PUBLIC';
 
-      // Adjust spot candles cleanly if a synthetic NIFTY Futures contract was requested offline
-      const upper = cleanSym.toUpperCase();
+      // Adjust spot candles cleanly if legacy NIFTY FUT-I/II/III alias was requested offline
       if (candles.length > 0 && (upper === 'NIFTY FUT-I' || upper === 'NIFTY FUT-II' || upper === 'NIFTY FUT-III')) {
         const spread = upper === 'NIFTY FUT-I' ? this.fut1Spread : upper === 'NIFTY FUT-II' ? this.fut2Spread : this.fut3Spread;
         candles = candles.map((c) => ({
@@ -146,14 +171,16 @@ export class MarketEngine {
 
     // Determine accurate CAS / Reference Price
     let casPrice: number | undefined;
-    const upper = cleanSym.toUpperCase();
     if (upper === 'NIFTY 50') {
       if (metaPrice && metaPrice > 0 && !this.brokerProvider.isConnected()) {
         this.spotPrice = metaPrice;
       }
       casPrice = this.spotPrice;
     } else {
-      const sec = this.customQuotes.get(upper) || this.buildPayload().securities.find((s) => s.symbol.toUpperCase() === upper);
+      const sec =
+        this.customQuotes.get(upper) ||
+        this.customQuotes.get(resolved.fyersSymbol.toUpperCase()) ||
+        this.buildPayload().securities.find((s) => s.symbol.toUpperCase() === upper);
       if (sec && sec.ltp > 0) {
         casPrice = sec.ltp;
       } else if (metaPrice && metaPrice > 0) {
@@ -172,10 +199,17 @@ export class MarketEngine {
   public addMonitoredSymbol(symbol: string): void {
     if (!symbol) return;
     const upper = symbol.trim().toUpperCase();
-    this.rawMonitoredSymbols.add(upper);
+    const resolved = symbolMaster.resolveInstrument(upper);
+    const isFuture =
+      resolved.instrument?.category === 'INDEX_FUTURES' ||
+      resolved.instrument?.category === 'STOCK_FUTURES';
+
+    if (!isFuture) {
+      this.rawMonitoredSymbols.add(upper);
+    }
 
     if (upper !== 'NIFTY FUT-I' && upper !== 'NIFTY FUT-II' && upper !== 'NIFTY FUT-III') {
-      const fyersSym = this.brokerProvider.toFyersSymbol(upper);
+      const fyersSym = resolved.fyersSymbol;
       if (!this.monitoredSymbols.has(fyersSym)) {
         this.monitoredSymbols.add(fyersSym);
         console.log(`[MarketEngine] Subscribed to live quotes for: ${symbol} (${fyersSym})`);
@@ -184,7 +218,7 @@ export class MarketEngine {
 
     if (this.brokerProvider.isConnected()) {
       this.syncQuotes().catch(() => {});
-    } else {
+    } else if (!isFuture) {
       this.publicProvider.fetchSingleQuote(upper).then((q) => {
         if (q) {
           this.storePublicQuote(upper, q);
@@ -192,6 +226,47 @@ export class MarketEngine {
         }
       }).catch(() => {});
     }
+  }
+
+  /**
+   * On-demand quote hydration for Watchlist segments (all NSE equities, indices, futures)
+   */
+  public async fetchOnDemandQuotes(symbols: string[]): Promise<SecurityQuote[]> {
+    if (!symbols || symbols.length === 0) return [];
+    await symbolMaster.ensureLoaded();
+
+    const limited = symbols.slice(0, 60);
+
+    if (this.brokerProvider.isConnected()) {
+      const reqToFyers = new Map<string, string>();
+      for (const s of limited) {
+        reqToFyers.set(s.toUpperCase(), symbolMaster.resolveInstrument(s).fyersSymbol);
+      }
+      const quotes = await this.brokerProvider.fetchQuotes(Array.from(new Set(reqToFyers.values())));
+      const byFyers = new Map<string, SecurityQuote>();
+      for (const q of quotes) {
+        this.storeFyersQuote(q);
+        byFyers.set(q.symbol.toUpperCase(), q);
+      }
+      const out: SecurityQuote[] = [];
+      for (const s of limited) {
+        const fs = reqToFyers.get(s.toUpperCase())?.toUpperCase();
+        const q = (fs && byFyers.get(fs)) || this.customQuotes.get(s.toUpperCase());
+        if (q) out.push({ ...q, symbol: s });
+      }
+      return out;
+    }
+
+    // Public fallback (Equities & Indices only)
+    const cashSymbols = limited.filter((s) => {
+      const r = symbolMaster.resolveInstrument(s).instrument;
+      return !r || (r.category !== 'INDEX_FUTURES' && r.category !== 'STOCK_FUTURES');
+    });
+    const pubQuotes = await this.publicProvider.fetchQuotes(cashSymbols);
+    for (const q of pubQuotes) {
+      this.storePublicQuote(q.symbol, q);
+    }
+    return pubQuotes;
   }
 
   private storePublicQuote(rawSym: string, q: SecurityQuote): void {
@@ -260,6 +335,38 @@ export class MarketEngine {
     }
   }
 
+  private storeFyersQuote(q: SecurityQuote): void {
+    const fUpper = q.symbol.toUpperCase();
+    this.customQuotes.set(fUpper, q);
+
+    const bare = fUpper.replace(/^NSE:/, '').replace(/-EQ$/, '').replace(/-INDEX$/, '');
+    this.customQuotes.set(bare, { ...q, symbol: bare });
+
+    if (bare === 'NIFTYBANK' || bare === 'NIFTY BANK') {
+      this.customQuotes.set('NIFTY BANK', { ...q, symbol: 'NIFTY BANK' });
+      this.customQuotes.set('BANK NIFTY', { ...q, symbol: 'BANK NIFTY' });
+    }
+    if (bare === 'INDIAVIX' || bare === 'INDIA VIX') {
+      this.indiaVix = q.ltp;
+    }
+
+    // Mirror Current-month Futures quote onto TradingView continuous alias (e.g. RELIANCE1!, NIFTY1!)
+    const resolved = symbolMaster.resolveInstrument(fUpper).instrument;
+    if (resolved && resolved.futuresRole === 'CURRENT') {
+      this.customQuotes.set(`${resolved.underlying}1!`, { ...q, symbol: `${resolved.underlying}1!` });
+    }
+
+    // Update live NIFTY Futures basis spreads when real NIFTY Future quotes arrive
+    const niftyContracts = symbolMaster.getNiftyMonthlyContracts();
+    if (niftyContracts.current && fUpper === niftyContracts.current.fyersSymbol.toUpperCase() && this.spotPrice > 0) {
+      this.fut1Spread = parseFloat((q.ltp - this.spotPrice).toFixed(2));
+    } else if (niftyContracts.next && fUpper === niftyContracts.next.fyersSymbol.toUpperCase() && this.spotPrice > 0) {
+      this.fut2Spread = parseFloat((q.ltp - this.spotPrice).toFixed(2));
+    } else if (niftyContracts.far && fUpper === niftyContracts.far.fyersSymbol.toUpperCase() && this.spotPrice > 0) {
+      this.fut3Spread = parseFloat((q.ltp - this.spotPrice).toFixed(2));
+    }
+  }
+
   /**
    * Fast quote synchronization (runs every 1.5s during market hours)
    */
@@ -277,7 +384,7 @@ export class MarketEngine {
         this.spotPrevClose = parseFloat((nifty.ltp - nifty.change).toFixed(2));
         this.spotVwap = nifty.vwap || this.spotVwap;
         this.activeCandle = {
-          time: Math.floor(Date.now() / 1000),
+          time: Math.floor(Date.now() / 1000) + 19800,
           open: this.spotOpen,
           high: this.spotHigh,
           low: this.spotLow,
@@ -287,17 +394,7 @@ export class MarketEngine {
 
       for (const q of quotes) {
         if (q.symbol !== 'NSE:NIFTY50-INDEX') {
-          this.customQuotes.set(q.symbol, q);
-          // Also set bare symbol name (e.g. RELIANCE, TCS)
-          const bare = q.symbol.replace(/^NSE:/, '').replace(/-EQ$/, '').replace(/-INDEX$/, '');
-          this.customQuotes.set(bare, { ...q, symbol: bare });
-          if (bare === 'NIFTYBANK' || bare === 'NIFTY BANK') {
-            this.customQuotes.set('NIFTY BANK', { ...q, symbol: 'NIFTY BANK' });
-            this.customQuotes.set('BANK NIFTY', { ...q, symbol: 'BANK NIFTY' });
-          }
-          if (bare === 'INDIAVIX' || bare === 'INDIA VIX') {
-            this.indiaVix = q.ltp;
-          }
+          this.storeFyersQuote(q);
         }
       }
 

@@ -2,10 +2,46 @@ import { Router, Request, Response } from 'express';
 import { marketEngine } from '../services/marketEngine.js';
 import { isIndianMarketOpen, getMarketSessionInfo } from '@pm-vision/shared';
 import { FyersAutoLoginService } from '../services/broker/FyersAutoLoginService.js';
+import { symbolMaster } from '../services/broker/SymbolMasterService.js';
 
 export const marketRouter = Router();
 
-// GET /api/market/history?resolution=15m|30m|1H|1D&symbol=RELIANCE|NIFTY 50
+// GET /api/market/instruments (Full NSE Cash Equities, Indices, F&O Stocks, and Futures Contracts)
+marketRouter.get('/instruments', async (_req: Request, res: Response) => {
+  try {
+    await symbolMaster.ensureLoaded();
+    const catalog = symbolMaster.getCatalog();
+    res.json({
+      status: 'ok',
+      ...catalog
+    });
+  } catch (err: any) {
+    console.error('Error in /api/market/instruments:', err);
+    res.status(500).json({ status: 'error', message: err?.message || 'Failed to load instruments' });
+  }
+});
+
+// GET /api/market/quotes?symbols=RELIANCE,RELIANCE1!,NIFTY26DECFUT
+marketRouter.get('/quotes', async (req: Request, res: Response) => {
+  const symbolsParam = (req.query.symbols as string) || '';
+  const symbols = symbolsParam
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  try {
+    const quotes = await marketEngine.fetchOnDemandQuotes(symbols);
+    res.json({
+      status: 'ok',
+      isBrokerConnected: marketEngine.isBrokerConnected(),
+      quotes
+    });
+  } catch (err: any) {
+    console.error('Error in /api/market/quotes:', err);
+    res.status(500).json({ status: 'error', message: err?.message || 'Failed to fetch quotes' });
+  }
+});
+
+// GET /api/market/history?resolution=15m|30m|1H|1D&symbol=RELIANCE|NIFTY 50|RELIANCE1!
 marketRouter.get('/history', async (req: Request, res: Response) => {
   const resolution = (req.query.resolution as string) || '15m';
   const symbol = (req.query.symbol as string) || 'NIFTY 50';
@@ -18,6 +54,7 @@ marketRouter.get('/history', async (req: Request, res: Response) => {
       resolution,
       count: result.candles.length,
       source: result.source,
+      requiresBroker: Boolean(result.requiresBroker),
       isBrokerConnected: marketEngine.isBrokerConnected(),
       casPrice: result.casPrice && result.casPrice > 0 ? result.casPrice : undefined,
       candles: result.candles

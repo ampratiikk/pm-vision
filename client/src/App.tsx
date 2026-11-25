@@ -5,10 +5,19 @@ import {
   BasisSpreadPair,
   OptionRow,
   ExpiryOption,
+  InstrumentCatalogResponse,
+  MasterInstrument,
   getMarketSessionInfo,
   MarketSessionInfo
 } from '@pm-vision/shared';
-import { fetchHealth, fetchMarketHistoryDetailed, fetchOptionChainByExpiry, fetchMarketStatus } from './services/api';
+import {
+  fetchHealth,
+  fetchMarketHistoryDetailed,
+  fetchOptionChainByExpiry,
+  fetchMarketStatus,
+  fetchInstrumentCatalog,
+  fetchOnDemandQuotes
+} from './services/api';
 import { createWebSocketConnection, WebSocketClient } from './services/websocket';
 import {
   CandlestickChart,
@@ -59,10 +68,38 @@ export function App() {
   const [healthStatus, setHealthStatus] = useState<'online' | 'offline' | 'loading'>('loading');
   const [wsStatus, setWsStatus] = useState<'online' | 'offline' | 'loading'>('loading');
   const [isBrokerConnected, setIsBrokerConnected] = useState<boolean>(false);
+  const [hasBrokerStatusLoaded, setHasBrokerStatusLoaded] = useState<boolean>(false);
   const [dataSource, setDataSource] = useState<'FYERS' | 'PUBLIC'>('PUBLIC');
   const [activeTimeFilter, setActiveTimeFilter] = useState<string>('15m');
   const [isChartLoading, setIsChartLoading] = useState<boolean>(false);
+  const [chartNotice, setChartNotice] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+
+  // Full NSE Equity / Index / Futures Master Catalog & On-Demand Quote Cache
+  const [catalog, setCatalog] = useState<InstrumentCatalogResponse | null>(null);
+  const [onDemandQuotes, setOnDemandQuotes] = useState<Record<string, SecurityQuote>>({});
+
+  const requestOnDemandQuotes = useCallback(async (symbols: string[]) => {
+    if (!symbols || symbols.length === 0) return;
+    try {
+      const res = await fetchOnDemandQuotes(symbols);
+      if (typeof res.isBrokerConnected === 'boolean') {
+        setIsBrokerConnected(res.isBrokerConnected);
+        setHasBrokerStatusLoaded(true);
+      }
+      if (res.quotes && res.quotes.length > 0) {
+        setOnDemandQuotes((prev) => {
+          const next = { ...prev };
+          for (const q of res.quotes) {
+            next[q.symbol.toUpperCase()] = q;
+          }
+          return next;
+        });
+      }
+    } catch {
+      // Ignore transient quote request failures
+    }
+  }, []);
 
   // Market session status (Markets Live / Markets Closed / Holiday / Pre / Post)
   const [sessionInfo, setSessionInfo] = useState<MarketSessionInfo>(getMarketSessionInfo);
@@ -78,6 +115,7 @@ export function App() {
   });
 
   const handleAddHighlightSymbol = (symbol: string) => {
+    requestOnDemandQuotes([symbol]);
     setHighlightSymbols((prev) => {
       if (prev.some((s) => s.toUpperCase() === symbol.toUpperCase())) return prev;
       const updated = [...prev, symbol];
@@ -200,6 +238,72 @@ export function App() {
   const [selectedExpiry, setSelectedExpiry] = useState<string>('');
   const [spotPrice, setSpotPrice] = useState<number>(25819.25);
 
+  const catalogMap = useMemo(() => {
+    const map = new Map<string, MasterInstrument>();
+    if (!catalog) return map;
+    for (const eq of catalog.equities) map.set(eq.symbol.toUpperCase(), eq);
+    for (const idx of catalog.indices) map.set(idx.symbol.toUpperCase(), idx);
+    for (const f of catalog.futures) map.set(f.symbol.toUpperCase(), f);
+    return map;
+  }, [catalog]);
+
+  const resolveSymbolMeta = useCallback(
+    (sym: string): { symbol: string; name: string; sector: string; basePrice: number } => {
+      const upper = sym.trim().toUpperCase();
+      const curated = [...NIFTY_50_CONSTITUENTS, ...NIFTY_INDICES].find(
+        (i) => i.symbol.toUpperCase() === upper
+      );
+      if (curated) {
+        return {
+          symbol: curated.symbol,
+          name: curated.name,
+          sector: curated.sector || (curated.isIndex ? 'INDEX' : 'Stock'),
+          basePrice: curated.basePrice
+        };
+      }
+      const master = catalogMap.get(upper);
+      if (master) {
+        let sectorTag =
+          master.category === 'INDEX'
+            ? 'INDEX'
+            : master.isFnO
+            ? 'NSE F&O'
+            : 'NSE EQUITY';
+        if (master.category === 'INDEX_FUTURES' || master.category === 'STOCK_FUTURES') {
+          const role =
+            master.futuresRole === 'CONTINUOUS'
+              ? 'CONT 1!'
+              : master.futuresRole || 'FUT';
+          sectorTag = master.expiryLabel ? `${role} · ${master.expiryLabel}` : `${role} FUT`;
+        }
+        return {
+          symbol: master.symbol,
+          name: master.name,
+          sector: sectorTag,
+          basePrice: 0
+        };
+      }
+      return {
+        symbol: sym,
+        name: sym,
+        sector: upper.includes('FUT') || upper.endsWith('1!') ? 'FUTURES' : 'NSE',
+        basePrice: 0
+      };
+    },
+    [catalogMap]
+  );
+
+  const mergedSecurities = useMemo(() => {
+    const map = new Map<string, SecurityQuote>();
+    for (const q of Object.values(onDemandQuotes)) {
+      map.set(q.symbol.toUpperCase(), q);
+    }
+    for (const s of securities) {
+      map.set(s.symbol.toUpperCase(), s);
+    }
+    return Array.from(map.values());
+  }, [securities, onDemandQuotes]);
+
   // Chart Historical Data State
   const [chartCandles, setChartCandles] = useState<CandlestickData<Time>[]>([]);
   const chartRef = useRef<ChartImperativeHandle | null>(null);
@@ -219,7 +323,7 @@ export function App() {
   // Active symbol's official CAS / Closing price
   const currentCasPrice = useMemo(() => {
     if (activeChartSymbol === 'NIFTY 50') return spotPrice;
-    const sec = securities.find((s) => s.symbol.toUpperCase() === activeChartSymbol.toUpperCase());
+    const sec = mergedSecurities.find((s) => s.symbol.toUpperCase() === activeChartSymbol.toUpperCase());
     if (sec && sec.ltp > 0) return sec.ltp;
     if (chartCandles && chartCandles.length > 0) {
       return chartCandles[chartCandles.length - 1].close;
@@ -228,17 +332,19 @@ export function App() {
       (i) => i.symbol.toUpperCase() === activeChartSymbol.toUpperCase()
     );
     return found?.basePrice || 0;
-  }, [activeChartSymbol, spotPrice, securities, chartCandles]);
+  }, [activeChartSymbol, spotPrice, mergedSecurities, chartCandles]);
 
   const loadHistory = useCallback(async (resolution: string, symbol?: string) => {
     const targetSymbol = symbol || activeChartSymbolRef.current;
     setIsChartLoading(true);
+    setChartNotice(null);
     try {
       const historyRes = await fetchMarketHistoryDetailed(resolution, targetSymbol);
       const candles = historyRes.candles;
 
       if (typeof historyRes.isBrokerConnected === 'boolean') {
         setIsBrokerConnected(historyRes.isBrokerConnected);
+        setHasBrokerStatusLoaded(true);
       }
       if (historyRes.source) {
         setDataSource(historyRes.source);
@@ -251,10 +357,15 @@ export function App() {
         if (targetSymbol === 'NIFTY 50') {
           baseHistoryRef.current = candles as any;
         }
+        setChartNotice(null);
         setChartCandles(candles as any);
         chartRef.current?.setData(candles as any);
+      } else if (historyRes.requiresBroker) {
+        setChartNotice(`${targetSymbol} futures chart requires an active FYERS connection. Connect FYERS in Settings.`);
+        setChartCandles([]);
+        chartRef.current?.setData([]);
       } else {
-        // Emergency offline fallback only if upstream returns empty
+        // Emergency offline fallback only if upstream returns empty for cash equities/indices
         const found = [...NIFTY_50_CONSTITUENTS, ...NIFTY_INDICES].find((i) => i.symbol === targetSymbol);
         const targetPrice = found?.basePrice || (targetSymbol === 'NIFTY 50' ? 25819.25 : 1000);
         const ratio = targetPrice / 25819.25;
@@ -447,7 +558,8 @@ export function App() {
       setSessionInfo(getMarketSessionInfo());
       fetchMarketStatus()
         .then((res: any) => {
-          setIsBrokerConnected(res.isBrokerConnected);
+          setIsBrokerConnected(Boolean(res.isBrokerConnected));
+          setHasBrokerStatusLoaded(true);
           if (res.session) {
             setSessionInfo(res.session);
           }
@@ -464,6 +576,11 @@ export function App() {
     fetchHealth()
       .then(() => setHealthStatus('online'))
       .catch(() => setHealthStatus('offline'));
+
+    // Load full NSE Equity / Index / Futures catalog from FYERS symbol master
+    fetchInstrumentCatalog()
+      .then((cat) => setCatalog(cat))
+      .catch(() => {});
 
     // Load initial real 15m historical candles from FYERS
     loadHistory('15m');
@@ -483,7 +600,10 @@ export function App() {
 
             if (data.expiries && data.expiries.length > 0) setExpiries(data.expiries);
             if (data.selectedExpiry) setSelectedExpiry(data.selectedExpiry);
-            if (typeof data.isBrokerConnected === 'boolean') setIsBrokerConnected(data.isBrokerConnected);
+            if (typeof data.isBrokerConnected === 'boolean') {
+              setIsBrokerConnected(data.isBrokerConnected);
+              setHasBrokerStatusLoaded(true);
+            }
             if (data.dataSource) setDataSource(data.dataSource);
 
             // Real-time chart candle updates during genuine open market hours
@@ -515,12 +635,13 @@ export function App() {
     };
   }, []);
 
-  // Dynamically subscribe to active symbol on WebSocket whenever active chart symbol changes
+  // Dynamically subscribe to active symbol on WebSocket & hydrate on-demand quote whenever symbol changes
   useEffect(() => {
     if (activeChartSymbol) {
       wsClientRef.current?.subscribe([activeChartSymbol]);
+      requestOnDemandQuotes([activeChartSymbol]);
     }
-  }, [activeChartSymbol]);
+  }, [activeChartSymbol, requestOnDemandQuotes]);
 
   // Global mouse move & up handlers for border dragging
   useEffect(() => {
@@ -622,8 +743,38 @@ export function App() {
           />
         </div>
 
-        {/* Header Right: Market Status */}
+        {/* Header Right: Broker Disconnected Error (LHS of Markets status) + Market Status */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+          {hasBrokerStatusLoaded && !isBrokerConnected && (
+            <button
+              onClick={() => setIsSettingsOpen(true)}
+              title="Open Broker Settings to connect FYERS"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '0.72rem',
+                color: '#fca5a5',
+                fontWeight: 600,
+                padding: '3px 9px',
+                borderRadius: '4px',
+                backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                border: '1px solid rgba(239, 68, 68, 0.35)',
+                cursor: 'pointer'
+              }}
+            >
+              <span
+                style={{
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '50%',
+                  backgroundColor: '#ef4444'
+                }}
+              />
+              <span>Couldn't fetch data from Main data source</span>
+            </button>
+          )}
+
           {/* Domestic Market Status */}
           <div style={{
             display: 'flex',
@@ -1052,6 +1203,44 @@ export function App() {
                   />
 
                   {/* Direct Keyboard Interval Jump Overlay (TradingView style) */}
+                  {chartNotice && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '48%',
+                        left: '50%',
+                        transform: 'translate(-50%, -50%)',
+                        backgroundColor: 'rgba(10, 10, 10, 0.94)',
+                        border: '1px solid #5F7A9A',
+                        borderRadius: '6px',
+                        padding: '1rem 1.4rem',
+                        maxWidth: '420px',
+                        textAlign: 'center',
+                        zIndex: 75,
+                        boxShadow: '0 12px 32px rgba(0, 0, 0, 0.9)'
+                      }}
+                    >
+                      <div style={{ fontSize: '0.80rem', color: '#e5e7eb', fontWeight: 600, marginBottom: '0.65rem' }}>
+                        {chartNotice}
+                      </div>
+                      <button
+                        onClick={() => setIsSettingsOpen(true)}
+                        style={{
+                          backgroundColor: '#5F7A9A',
+                          color: '#ffffff',
+                          border: 'none',
+                          borderRadius: '4px',
+                          padding: '5px 12px',
+                          fontSize: '0.72rem',
+                          fontWeight: 600,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Connect FYERS in Settings
+                      </button>
+                    </div>
+                  )}
+
                   {keyIntervalVisible && (
                     <div
                       style={{
@@ -1119,17 +1308,15 @@ export function App() {
                         setIsWatchlistOpen(false);
                         setWatchlistMode('docked');
                       }}
-                      securities={securities}
+                      securities={mergedSecurities}
+                      catalog={catalog}
                       activeSymbol={activeChartSymbol}
                       highlightSymbols={highlightSymbols}
                       onToggleHighlightSymbol={handleToggleHighlightSymbol}
+                      onRequestQuotes={requestOnDemandQuotes}
                       onSelectSymbol={(sym) => {
-                        const found = [...NIFTY_50_CONSTITUENTS, ...NIFTY_INDICES].find((i) => i.symbol === sym);
-                        if (found) {
-                          handleSelectSymbol(found.symbol, found.name, found.sector || (found.isIndex ? 'INDEX' : 'Stock'), found.basePrice);
-                        } else {
-                          handleSelectSymbol(sym, sym, 'Stock', spotPrice);
-                        }
+                        const meta = resolveSymbolMeta(sym);
+                        handleSelectSymbol(meta.symbol, meta.name, meta.sector, meta.basePrice);
                       }}
                     />
                   </div>
@@ -1195,19 +1382,14 @@ export function App() {
                           overflow: 'hidden'
                         }}>
                           <HighlightWindow
-                            securities={securities}
+                            securities={mergedSecurities}
+                            catalog={catalog}
                             customSymbols={highlightSymbols}
                             onAddSymbol={handleAddHighlightSymbol}
                             onRemoveSymbol={handleRemoveHighlightSymbol}
                             onSelectSymbol={(sym) => {
-                              const found = [...NIFTY_50_CONSTITUENTS, ...NIFTY_INDICES].find(
-                                (i) => i.symbol.toUpperCase() === sym.toUpperCase()
-                              );
-                              if (found) {
-                                handleSelectSymbol(found.symbol, found.name, found.sector || (found.isIndex ? 'INDEX' : 'Stock'), found.basePrice);
-                              } else {
-                                handleSelectSymbol(sym, sym, 'FUTURES', spotPrice);
-                              }
+                              const meta = resolveSymbolMeta(sym);
+                              handleSelectSymbol(meta.symbol, meta.name, meta.sector, meta.basePrice);
                             }}
                             activeChartSymbol={activeChartSymbol}
                             style={{ height: '100%' }}
@@ -1496,6 +1678,9 @@ export function App() {
         onClose={() => setIsSymbolSearchOpen(false)}
         onSelectSymbol={handleSelectSymbol}
         activeSymbol={activeChartSymbol}
+        catalog={catalog}
+        securities={mergedSecurities}
+        onRequestQuotes={requestOnDemandQuotes}
       />
 
       {/* ===================== INDICATORS MODAL ===================== */}
@@ -1524,8 +1709,16 @@ export function App() {
         dataSource={dataSource}
         onBrokerConnected={() => {
           setIsBrokerConnected(true);
+          setHasBrokerStatusLoaded(true);
           setDataSource('FYERS');
+          setChartNotice(null);
           loadHistory(activeTimeFilter);
+          requestOnDemandQuotes([activeChartSymbol]);
+          if (!catalog) {
+            fetchInstrumentCatalog()
+              .then((cat) => setCatalog(cat))
+              .catch(() => {});
+          }
           fetchOptionChainByExpiry('')
             .then((d) => {
               if (d?.optionChain) setOptionChain(d.optionChain);

@@ -8,6 +8,8 @@ export async function fetchHealth(): Promise<HealthCheckResponse> {
   return response.json();
 }
 
+import type { InstrumentCatalogResponse, SecurityQuote as ApiSecurityQuote } from '@pm-vision/shared';
+
 export async function fetchMarketStatus(): Promise<{
   marketStatus: 'OPEN' | 'CLOSED';
   session: MarketSessionInfo;
@@ -20,11 +22,38 @@ export async function fetchMarketStatus(): Promise<{
   return response.json();
 }
 
+export async function fetchInstrumentCatalog(): Promise<InstrumentCatalogResponse> {
+  const response = await fetch('/api/market/instruments');
+  if (!response.ok) {
+    throw new Error(`Instrument catalog fetch error: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function fetchOnDemandQuotes(symbols: string[]): Promise<{
+  quotes: ApiSecurityQuote[];
+  isBrokerConnected: boolean;
+}> {
+  if (!symbols || symbols.length === 0) {
+    return { quotes: [], isBrokerConnected: false };
+  }
+  const response = await fetch(`/api/market/quotes?symbols=${encodeURIComponent(symbols.join(','))}`);
+  if (!response.ok) {
+    throw new Error(`Quotes fetch error: ${response.status}`);
+  }
+  const json = await response.json();
+  return {
+    quotes: Array.isArray(json.quotes) ? json.quotes : [],
+    isBrokerConnected: Boolean(json.isBrokerConnected)
+  };
+}
+
 export interface MarketHistoryResponse {
   candles: ChartCandleTick[];
   casPrice?: number;
   source?: 'FYERS' | 'PUBLIC';
   isBrokerConnected?: boolean;
+  requiresBroker?: boolean;
 }
 
 export async function fetchMarketHistoryDetailed(
@@ -40,7 +69,8 @@ export async function fetchMarketHistoryDetailed(
     candles: json.candles || [],
     casPrice: typeof json.casPrice === 'number' ? json.casPrice : undefined,
     source: json.source,
-    isBrokerConnected: typeof json.isBrokerConnected === 'boolean' ? json.isBrokerConnected : undefined
+    isBrokerConnected: typeof json.isBrokerConnected === 'boolean' ? json.isBrokerConnected : undefined,
+    requiresBroker: typeof json.requiresBroker === 'boolean' ? json.requiresBroker : undefined
   };
 }
 

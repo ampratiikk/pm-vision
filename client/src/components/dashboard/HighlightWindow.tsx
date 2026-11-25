@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { SecurityQuote } from '@pm-vision/shared';
+import { SecurityQuote, InstrumentCatalogResponse } from '@pm-vision/shared';
 import { NIFTY_50_CONSTITUENTS, NIFTY_INDICES, WatchlistItem } from './watchlistData';
 
 export type SecurityInfo = SecurityQuote;
@@ -18,6 +18,7 @@ interface HighlightWindowProps {
   onRemoveSymbol?: (symbol: string) => void;
   onSelectSymbol?: (symbol: string) => void;
   activeChartSymbol?: string;
+  catalog?: InstrumentCatalogResponse | null;
   style?: React.CSSProperties;
 }
 
@@ -28,6 +29,7 @@ export const HighlightWindow: React.FC<HighlightWindowProps> = ({
   onRemoveSymbol,
   onSelectSymbol,
   activeChartSymbol = 'NIFTY 50',
+  catalog = null,
   style
 }) => {
   const [selectedSymbol, setSelectedSymbol] = useState<string>('NIFTY 50');
@@ -44,10 +46,68 @@ export const HighlightWindow: React.FC<HighlightWindowProps> = ({
     return map;
   }, [securities]);
 
-  // Combined master catalog of all available stocks & indices
+  // Combined master catalog of all available stocks, indices & futures
   const allCatalogItems = useMemo(() => {
-    return [...NIFTY_INDICES, ...NIFTY_50_CONSTITUENTS];
-  }, []);
+    const items: WatchlistItem[] = [];
+    const seen = new Set<string>();
+
+    const pushItem = (item: WatchlistItem) => {
+      const key = item.symbol.toUpperCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        items.push(item);
+      }
+    };
+
+    for (const idx of NIFTY_INDICES) pushItem(idx);
+    for (const n50 of NIFTY_50_CONSTITUENTS) pushItem(n50);
+
+    if (catalog) {
+      for (const f of catalog.futures) {
+        const roleTag =
+          f.futuresRole === 'CONTINUOUS'
+            ? 'CONT'
+            : f.futuresRole || 'FUT';
+        pushItem({
+          symbol: f.symbol,
+          name: f.expiryLabel ? `${f.name} · ${roleTag} (${f.expiryLabel})` : `${f.name} · ${roleTag}`,
+          sector: f.category === 'INDEX_FUTURES' ? 'Index Futures' : 'Stock Futures',
+          basePrice: 0,
+          change: 0,
+          changePct: 0,
+          high: 0,
+          low: 0
+        });
+      }
+      for (const idx of catalog.indices) {
+        pushItem({
+          symbol: idx.symbol,
+          name: idx.name,
+          sector: 'Index',
+          basePrice: 0,
+          change: 0,
+          changePct: 0,
+          high: 0,
+          low: 0,
+          isIndex: true
+        });
+      }
+      for (const eq of catalog.equities) {
+        pushItem({
+          symbol: eq.symbol,
+          name: eq.name,
+          sector: eq.isFnO ? 'NSE F&O' : 'NSE Equity',
+          basePrice: 0,
+          change: 0,
+          changePct: 0,
+          high: 0,
+          low: 0
+        });
+      }
+    }
+
+    return items;
+  }, [catalog]);
 
   // Build the list of active items in Highlight Window
   const highlightItems: SecurityInfo[] = useMemo(() => {
@@ -77,6 +137,20 @@ export const HighlightWindow: React.FC<HighlightWindowProps> = ({
             vwap: found.basePrice,
             volume: '—'
           });
+        } else {
+          items.push({
+            id: `hl-${sym.toLowerCase()}`,
+            name: sym,
+            symbol: sym,
+            ltp: 0,
+            change: 0,
+            changePct: 0,
+            high: 0,
+            low: 0,
+            open: 0,
+            vwap: 0,
+            volume: '—'
+          });
         }
       }
     }
@@ -94,16 +168,32 @@ export const HighlightWindow: React.FC<HighlightWindowProps> = ({
 
   const spot = securityMap.get('NIFTY 50') || DEFAULT_SECURITIES[0];
   const basisPts = ((current?.ltp ?? 0) - (spot?.ltp ?? 0)).toFixed(2);
+  const showBasis = current.symbol.toUpperCase().startsWith('NIFTY FUT');
 
-  // Available symbols to add (excluding already added)
+  // Available symbols to add (excluding already added), ranked by relevance
   const availableToAdd = useMemo(() => {
     const existing = new Set(highlightItems.map((i) => i.symbol.toUpperCase()));
-    return allCatalogItems.filter(
-      (item) =>
-        !existing.has(item.symbol.toUpperCase()) &&
-        (item.symbol.toLowerCase().includes(searchFilter.toLowerCase()) ||
-          item.name.toLowerCase().includes(searchFilter.toLowerCase()))
-    );
+    const q = searchFilter.trim().toLowerCase();
+    const matches = allCatalogItems.filter((item) => {
+      if (existing.has(item.symbol.toUpperCase())) return false;
+      if (!q) return true;
+      return (
+        item.symbol.toLowerCase().includes(q) ||
+        item.name.toLowerCase().includes(q) ||
+        (item.sector && item.sector.toLowerCase().includes(q))
+      );
+    });
+    if (!q) return matches.slice(0, 30);
+    return matches
+      .sort((a, b) => {
+        const aSym = a.symbol.toLowerCase();
+        const bSym = b.symbol.toLowerCase();
+        const aExact = aSym === q ? 0 : aSym.startsWith(q) ? 1 : 2;
+        const bExact = bSym === q ? 0 : bSym.startsWith(q) ? 1 : 2;
+        if (aExact !== bExact) return aExact - bExact;
+        return aSym.localeCompare(bSym);
+      })
+      .slice(0, 30);
   }, [allCatalogItems, highlightItems, searchFilter]);
 
   const handleSelectSymbolChange = (sym: string) => {
@@ -228,7 +318,7 @@ export const HighlightWindow: React.FC<HighlightWindowProps> = ({
           <input
             type="text"
             autoFocus
-            placeholder="Search stock or index (e.g. INFY, TCS)..."
+            placeholder="Search stock, index or future (e.g. RELIANCE1!, NIFTY, TCS)..."
             value={searchFilter}
             onChange={(e) => setSearchFilter(e.target.value)}
             style={{
@@ -242,8 +332,8 @@ export const HighlightWindow: React.FC<HighlightWindowProps> = ({
               outline: 'none'
             }}
           />
-          <div style={{ maxHeight: '110px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-            {availableToAdd.slice(0, 15).map((item) => (
+          <div style={{ maxHeight: '140px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            {availableToAdd.map((item) => (
               <div
                 key={item.symbol}
                 onClick={() => handleAdd(item)}
@@ -260,11 +350,13 @@ export const HighlightWindow: React.FC<HighlightWindowProps> = ({
                 onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(95, 122, 154, 0.2)')}
                 onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ fontWeight: 700, color: '#ffffff' }}>{item.symbol}</span>
-                  <span style={{ color: '#737373', fontSize: '0.62rem' }}>{item.name}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden', maxWidth: '80%' }}>
+                  <span style={{ fontWeight: 700, color: '#ffffff', whiteSpace: 'nowrap' }}>{item.symbol}</span>
+                  <span style={{ color: '#737373', fontSize: '0.62rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {item.name}
+                  </span>
                 </div>
-                <span style={{ color: '#5F7A9A', fontSize: '0.62rem', fontWeight: 600 }}>+ Add</span>
+                <span style={{ color: '#5F7A9A', fontSize: '0.62rem', fontWeight: 600, flexShrink: 0 }}>+ Add</span>
               </div>
             ))}
             {availableToAdd.length === 0 && (
@@ -373,23 +465,39 @@ export const HighlightWindow: React.FC<HighlightWindowProps> = ({
       >
         <div>
           <span style={{ fontSize: '1.25rem', fontWeight: 700, fontFamily: 'monospace', color: '#ffffff' }}>
-            {current?.ltp !== undefined ? current.ltp.toFixed(2) : '—'}
+            {current && current.ltp > 0 ? current.ltp.toFixed(2) : '—'}
           </span>
-          <span
-            style={{
-              marginLeft: '0.5rem',
-              fontSize: '0.78rem',
-              fontFamily: 'monospace',
-              color: (current?.change ?? 0) >= 0 ? '#10b981' : '#ef4444'
-            }}
-          >
-            {(current?.change ?? 0) >= 0 ? '+' : ''}
-            {(current?.change ?? 0).toFixed(2)} ({(current?.changePct ?? 0) >= 0 ? '+' : ''}
-            {(current?.changePct ?? 0).toFixed(2)}%)
-          </span>
+          {current && current.ltp > 0 && (
+            <span
+              style={{
+                marginLeft: '0.5rem',
+                fontSize: '0.78rem',
+                fontFamily: 'monospace',
+                color: (current?.change ?? 0) >= 0 ? '#10b981' : '#ef4444'
+              }}
+            >
+              {(current?.change ?? 0) >= 0 ? '+' : ''}
+              {(current?.change ?? 0).toFixed(2)} ({(current?.changePct ?? 0) >= 0 ? '+' : ''}
+              {(current?.changePct ?? 0).toFixed(2)}%)
+            </span>
+          )}
         </div>
         <div style={{ fontSize: '0.70rem', color: '#CCCCCC', textAlign: 'right' }}>
-          Basis (Fut - Spot): <span style={{ color: '#ffffff', fontFamily: 'monospace' }}>+{basisPts}</span>
+          {showBasis ? (
+            <>
+              Basis (Fut - Spot):{' '}
+              <span style={{ color: '#ffffff', fontFamily: 'monospace' }}>
+                {Number(basisPts) >= 0 ? `+${basisPts}` : basisPts}
+              </span>
+            </>
+          ) : (
+            <>
+              Open:{' '}
+              <span style={{ color: '#ffffff', fontFamily: 'monospace' }}>
+                {current && current.open > 0 ? current.open.toFixed(2) : '—'}
+              </span>
+            </>
+          )}
         </div>
       </div>
 
@@ -408,15 +516,21 @@ export const HighlightWindow: React.FC<HighlightWindowProps> = ({
       >
         <div>
           <div style={{ color: '#888888' }}>High</div>
-          <div style={{ fontFamily: 'monospace', color: '#ffffff', fontWeight: 600 }}>{current.high.toFixed(2)}</div>
+          <div style={{ fontFamily: 'monospace', color: '#ffffff', fontWeight: 600 }}>
+            {current && current.high > 0 ? current.high.toFixed(2) : '—'}
+          </div>
         </div>
         <div>
           <div style={{ color: '#888888' }}>Low</div>
-          <div style={{ fontFamily: 'monospace', color: '#ffffff', fontWeight: 600 }}>{current.low.toFixed(2)}</div>
+          <div style={{ fontFamily: 'monospace', color: '#ffffff', fontWeight: 600 }}>
+            {current && current.low > 0 ? current.low.toFixed(2) : '—'}
+          </div>
         </div>
         <div>
           <div style={{ color: '#888888' }}>VWAP</div>
-          <div style={{ fontFamily: 'monospace', color: '#ffffff', fontWeight: 600 }}>{current.vwap.toFixed(2)}</div>
+          <div style={{ fontFamily: 'monospace', color: '#ffffff', fontWeight: 600 }}>
+            {current && current.vwap > 0 ? current.vwap.toFixed(2) : '—'}
+          </div>
         </div>
         <div>
           <div style={{ color: '#888888' }}>Volume</div>
