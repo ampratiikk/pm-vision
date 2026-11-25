@@ -28,6 +28,44 @@ export const DEFAULT_CANDLE_COLORS: CandleColorSettings = {
   downWickColor: '#e5e7eb'
 };
 
+export interface CandlestickThemePreset {
+  id: 'void' | 'regular' | 'jewel';
+  label: string;
+  colors: CandleColorSettings;
+}
+
+export const CANDLESTICK_THEMES: CandlestickThemePreset[] = [
+  {
+    id: 'void',
+    label: '(Default) Void',
+    colors: DEFAULT_CANDLE_COLORS
+  },
+  {
+    id: 'regular',
+    label: 'Regular - Green & Red',
+    colors: {
+      upBodyColor: '#157347',
+      downBodyColor: '#9e1c24',
+      upBorderColor: '#198754',
+      downBorderColor: '#b92b2b',
+      upWickColor: '#198754',
+      downWickColor: '#b92b2b'
+    }
+  },
+  {
+    id: 'jewel',
+    label: 'Jewel - Gold & Silver',
+    colors: {
+      upBodyColor: '#dfb430',
+      downBodyColor: '#a6b0ba',
+      upBorderColor: '#fff08a',
+      downBorderColor: '#f8fafc',
+      upWickColor: '#fff08a',
+      downWickColor: '#f8fafc'
+    }
+  }
+];
+
 export interface ChartImperativeHandle {
   /**
    * Update the latest candle or append a new candle in real-time.

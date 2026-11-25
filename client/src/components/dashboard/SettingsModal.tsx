@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CandleColorSettings } from '../chart/types';
+import { CandleColorSettings, CANDLESTICK_THEMES } from '../chart/types';
 import { TradingViewColorPicker } from './TradingViewColorPicker';
 import { updateBrokerToken, executeAutoLogin, fetchFyersLoginUrl } from '../../services/api';
 
@@ -16,6 +16,7 @@ interface SettingsModalProps {
   apiStatus: 'online' | 'offline' | 'loading';
   wsStatus: 'online' | 'offline' | 'loading';
   isBrokerConnected?: boolean;
+  dataSource?: 'FYERS' | 'PUBLIC';
   onBrokerConnected?: () => void;
 }
 
@@ -29,6 +30,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   apiStatus,
   wsStatus,
   isBrokerConnected = false,
+  dataSource = 'PUBLIC',
   onBrokerConnected
 }) => {
   const [activeTab, setActiveTab] = useState<'chart' | 'system'>(initialTab);
@@ -202,9 +204,95 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         {/* Body Content */}
-        <div style={{ padding: '1.2rem', display: 'flex', flexDirection: 'column', gap: '1rem', maxHeight: '460px', overflowY: 'auto' }}>
+        <div style={{ padding: '1.2rem', display: 'flex', flexDirection: 'column', gap: '1rem', maxHeight: '490px', overflowY: 'auto' }}>
           {activeTab === 'chart' ? (
             <>
+              {/* Candlestick Theme Selector */}
+              <div style={{
+                backgroundColor: '#050505',
+                border: '1px solid #1a1a1a',
+                borderRadius: '4px',
+                padding: '0.85rem'
+              }}>
+                <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#e5e7eb', marginBottom: '0.65rem', letterSpacing: '0.05em' }}>
+                  CANDLESTICK THEME
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                  {CANDLESTICK_THEMES.map((theme) => {
+                    const isSelected =
+                      candleColors.upBodyColor.toLowerCase() === theme.colors.upBodyColor.toLowerCase() &&
+                      candleColors.downBodyColor.toLowerCase() === theme.colors.downBodyColor.toLowerCase() &&
+                      candleColors.upBorderColor.toLowerCase() === theme.colors.upBorderColor.toLowerCase() &&
+                      candleColors.downBorderColor.toLowerCase() === theme.colors.downBorderColor.toLowerCase();
+
+                    const isJewel = theme.id === 'jewel';
+                    const bullBg = isJewel
+                      ? 'linear-gradient(135deg, #fff6b3 0%, #dfb430 55%, #997316 100%)'
+                      : theme.colors.upBodyColor;
+                    const bearBg = isJewel
+                      ? 'linear-gradient(135deg, #ffffff 0%, #b4bec8 55%, #64748b 100%)'
+                      : theme.colors.downBodyColor;
+
+                    return (
+                      <button
+                        key={theme.id}
+                        type="button"
+                        onClick={() => onUpdateCandleColors(theme.colors)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '7px 10px',
+                          borderRadius: '4px',
+                          backgroundColor: isSelected ? 'rgba(95, 122, 154, 0.16)' : '#0c0c0c',
+                          border: `1px solid ${isSelected ? '#5F7A9A' : '#1f1f1f'}`,
+                          color: isSelected ? '#ffffff' : '#d4d4d4',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                          textAlign: 'left'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{
+                            width: '8px',
+                            height: '8px',
+                            borderRadius: '50%',
+                            backgroundColor: isSelected ? '#5F7A9A' : '#262626',
+                            border: `1px solid ${isSelected ? '#8ba7c7' : '#404040'}`,
+                            flexShrink: 0
+                          }} />
+                          <span style={{ fontSize: '0.74rem', fontWeight: isSelected ? 600 : 500 }}>
+                            {theme.label}
+                          </span>
+                        </div>
+
+                        {/* Mini Candle Preview Swatch */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <span style={{
+                            width: '9px',
+                            height: '15px',
+                            borderRadius: '1.5px',
+                            background: bullBg,
+                            border: `1px solid ${theme.colors.upBorderColor}`,
+                            boxShadow: isJewel ? '0 0 6px rgba(255, 240, 138, 0.45)' : 'none',
+                            display: 'inline-block'
+                          }} />
+                          <span style={{
+                            width: '9px',
+                            height: '15px',
+                            borderRadius: '1.5px',
+                            background: bearBg,
+                            border: `1px solid ${theme.colors.downBorderColor}`,
+                            boxShadow: isJewel ? '0 0 6px rgba(248, 250, 252, 0.4)' : 'none',
+                            display: 'inline-block'
+                          }} />
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               {/* Up Candle Customization */}
               <div style={{
                 backgroundColor: '#050505',
@@ -324,15 +412,27 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem' }}>
                   <span style={{ color: '#737373' }}>Broker Data Feed:</span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '2px 8px',
+                    borderRadius: '3px',
+                    backgroundColor: isBrokerConnected ? 'rgba(16, 185, 129, 0.08)' : 'rgba(95, 122, 154, 0.12)',
+                    border: `1px solid ${isBrokerConnected ? 'rgba(16, 185, 129, 0.3)' : 'rgba(95, 122, 154, 0.35)'}`
+                  }}>
                     <span style={{
                       width: '6px',
                       height: '6px',
                       borderRadius: '50%',
-                      backgroundColor: isBrokerConnected ? '#10b981' : '#ef4444'
+                      backgroundColor: isBrokerConnected ? '#10b981' : '#5F7A9A'
                     }} />
-                    <span style={{ color: isBrokerConnected ? '#10b981' : '#ef4444', fontWeight: 600 }}>
-                      {isBrokerConnected ? 'FYERS Connected' : 'FYERS Token Expired'}
+                    <span style={{ color: isBrokerConnected ? '#10b981' : '#e5e7eb', fontWeight: 600, fontSize: '0.70rem' }}>
+                      {isBrokerConnected
+                        ? 'FYERS Live (Connected)'
+                        : dataSource === 'PUBLIC'
+                          ? 'Public Feed · Connect FYERS'
+                          : 'Disconnected · Connect FYERS'}
                     </span>
                   </div>
                 </div>

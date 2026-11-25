@@ -63,7 +63,6 @@ export function App() {
   const [activeTimeFilter, setActiveTimeFilter] = useState<string>('15m');
   const [isChartLoading, setIsChartLoading] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
-  const [settingsInitialTab, setSettingsInitialTab] = useState<'chart' | 'system'>('chart');
 
   // Market session status (Markets Live / Markets Closed / Holiday / Pre / Post)
   const [sessionInfo, setSessionInfo] = useState<MarketSessionInfo>(getMarketSessionInfo);
@@ -623,44 +622,8 @@ export function App() {
           />
         </div>
 
-        {/* Header Right: Market Status & Broker Feed */}
+        {/* Header Right: Market Status */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-          {/* Broker / Live Feed Status Pill (Click to configure FYERS token) */}
-          <button
-            onClick={() => {
-              setSettingsInitialTab('system');
-              setIsSettingsOpen(true);
-            }}
-            title={isBrokerConnected ? 'FYERS Live Broker Connected (Click for System Status)' : 'Using Public NSE/Yahoo Feed - Click to connect FYERS for live option chain & sub-2s ticks'}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              fontSize: '0.70rem',
-              color: isBrokerConnected ? '#10b981' : '#9ca3af',
-              fontWeight: 600,
-              padding: '3px 8px',
-              borderRadius: '4px',
-              backgroundColor: isBrokerConnected ? 'rgba(16, 185, 129, 0.08)' : 'rgba(95, 122, 154, 0.10)',
-              border: `1px solid ${isBrokerConnected ? 'rgba(16, 185, 129, 0.3)' : 'rgba(95, 122, 154, 0.35)'}`,
-              cursor: 'pointer'
-            }}
-          >
-            <span style={{
-              width: '6px',
-              height: '6px',
-              borderRadius: '50%',
-              backgroundColor: isBrokerConnected ? '#10b981' : '#5F7A9A'
-            }} />
-            <span>
-              {isBrokerConnected
-                ? 'FYERS Live'
-                : dataSource === 'PUBLIC'
-                  ? 'Public Feed · Connect FYERS'
-                  : 'Connect FYERS'}
-            </span>
-          </button>
-
           {/* Domestic Market Status */}
           <div style={{
             display: 'flex',
@@ -1443,10 +1406,7 @@ export function App() {
           {/* Bottom of Right Panel: Settings Icon */}
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
             <button
-              onClick={() => {
-                setSettingsInitialTab('chart');
-                setIsSettingsOpen(true);
-              }}
+              onClick={() => setIsSettingsOpen(true)}
               title="Platform & Chart Settings (Candle Colors, System Status)"
               style={{
                 width: '32px',
@@ -1509,7 +1469,6 @@ export function App() {
           <div style={{ height: '1px', backgroundColor: '#1a1a1a', margin: '4px 0' }} />
           <div
             onClick={() => {
-              setSettingsInitialTab('chart');
               setIsSettingsOpen(true);
               setContextMenu((prev) => ({ ...prev, visible: false }));
             }}
@@ -1556,13 +1515,13 @@ export function App() {
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
-        initialTab={settingsInitialTab}
         candleColors={candleColors}
         onUpdateCandleColors={handleUpdateCandleColors}
         onResetCandleColors={handleResetCandleColors}
         apiStatus={healthStatus}
         wsStatus={wsStatus}
         isBrokerConnected={isBrokerConnected}
+        dataSource={dataSource}
         onBrokerConnected={() => {
           setIsBrokerConnected(true);
           setDataSource('FYERS');

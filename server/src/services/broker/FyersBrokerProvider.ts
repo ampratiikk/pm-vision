@@ -379,7 +379,7 @@ export class FyersBrokerProvider implements IBrokerProvider {
     if (!this.appId || !this.accessToken) return null;
 
     try {
-      let url = `https://api-t1.fyers.in/data/options-chain-v3?symbol=NSE:NIFTY50-INDEX&strikecount=15`;
+      let url = `https://api-t1.fyers.in/data/options-chain-v3?symbol=NSE:NIFTY50-INDEX&strikecount=50`;
       if (expiryTimestamp) {
         url += `&timestamp=${expiryTimestamp}`;
       }

@@ -49,11 +49,12 @@ export const DEFAULT_SPOT_PRICE = 25819.25;
  * Generate a dynamically centered option chain around live Spot Price
  * when broker live OI feed is not yet authenticated.
  */
-function buildDynamicOptionChain(centerSpot: number = DEFAULT_SPOT_PRICE): OptionRow[] {
+function buildDynamicOptionChain(centerSpot: number = DEFAULT_SPOT_PRICE, sideStrikes: number = 50): OptionRow[] {
   const rows: OptionRow[] = [];
   const atm = Math.round(centerSpot / 50) * 50;
-  const minStrike = atm - 1000;
-  const maxStrike = atm + 1000;
+  const span = Math.max(20, sideStrikes) * 50;
+  const minStrike = atm - span;
+  const maxStrike = atm + span;
   const step = 50;
 
   for (let strike = minStrike; strike <= maxStrike; strike += step) {
@@ -125,14 +126,33 @@ export const OptionChainWidget: React.FC<OptionChainWidgetProps> = ({
 }) => {
   const currentSpotPrice = spotPrice && spotPrice > 0 ? spotPrice : DEFAULT_SPOT_PRICE;
   const currentAtmStrike = Math.round(currentSpotPrice / 50) * 50;
-  const fallbackChain = useMemo(() => buildDynamicOptionChain(currentSpotPrice), [currentSpotPrice]);
+
+  // Visible Strikes option: default 10 (10 above ATM, 10 below ATM, up to 50 max)
+  const [strikeCount, setStrikeCount] = useState<number>(() => {
+    try {
+      const saved = parseInt(localStorage.getItem('pm_vision_oc_strikecount') || '', 10);
+      return saved >= 5 && saved <= 50 ? saved : 10;
+    } catch {
+      return 10;
+    }
+  });
+
+  const updateStrikeCount = (nextVal: number) => {
+    const clamped = Math.max(5, Math.min(50, Math.round(nextVal)));
+    setStrikeCount(clamped);
+    try {
+      localStorage.setItem('pm_vision_oc_strikecount', String(clamped));
+    } catch {}
+  };
+
+  const fallbackChain = useMemo(
+    () => buildDynamicOptionChain(currentSpotPrice, Math.max(50, strikeCount)),
+    [currentSpotPrice, strikeCount]
+  );
   const currentChain = data && data.length > 0 ? data : fallbackChain;
 
   const [selectedStrike, setSelectedStrike] = useState<number>(currentAtmStrike);
   const [showSettings, setShowSettings] = useState<boolean>(false);
-
-  // Visible Strikes option: default 10 (10 above ATM, 10 below ATM)
-  const [strikeCount, setStrikeCount] = useState<number>(10);
 
   const [visibleColumns, setVisibleColumns] = useState<Record<ColumnKey, boolean>>({
     theta: true,
@@ -357,29 +377,76 @@ export const OptionChainWidget: React.FC<OptionChainWidgetProps> = ({
               borderRadius: '4px',
               boxShadow: '0 8px 24px rgba(0,0,0,0.9)',
               padding: '0.75rem 0.85rem',
-              width: '210px',
+              width: '230px',
               zIndex: 50,
               display: 'flex',
               flexDirection: 'column',
               gap: '0.65rem'
             }}>
               {/* Strike Count Selector */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', borderBottom: '1px solid #1a1a1a', paddingBottom: '0.6rem' }}>
-                <div style={{ fontSize: '0.70rem', color: '#CCCCCC', fontWeight: 700 }}>
-                  VISIBLE STRIKES (± ATM)
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', borderBottom: '1px solid #1a1a1a', paddingBottom: '0.6rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '0.70rem', color: '#CCCCCC', fontWeight: 700 }}>
+                    VISIBLE STRIKES (± ATM)
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <button
+                      type="button"
+                      onClick={() => updateStrikeCount(strikeCount - 5)}
+                      disabled={strikeCount <= 5}
+                      title="Decrease strikes"
+                      style={{
+                        width: '20px',
+                        height: '20px',
+                        padding: 0,
+                        fontSize: '0.76rem',
+                        lineHeight: 1,
+                        backgroundColor: '#121212',
+                        border: '1px solid #262626',
+                        color: strikeCount <= 5 ? '#404040' : '#CCCCCC',
+                        borderRadius: '2px',
+                        cursor: strikeCount <= 5 ? 'not-allowed' : 'pointer'
+                      }}
+                    >
+                      -
+                    </button>
+                    <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#ffffff', minWidth: '20px', textAlign: 'center' }}>
+                      {strikeCount}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => updateStrikeCount(strikeCount + 5)}
+                      disabled={strikeCount >= 50}
+                      title="Increase strikes"
+                      style={{
+                        width: '20px',
+                        height: '20px',
+                        padding: 0,
+                        fontSize: '0.76rem',
+                        lineHeight: 1,
+                        backgroundColor: '#121212',
+                        border: '1px solid #262626',
+                        color: strikeCount >= 50 ? '#404040' : '#CCCCCC',
+                        borderRadius: '2px',
+                        cursor: strikeCount >= 50 ? 'not-allowed' : 'pointer'
+                      }}
+                    >
+                      +
+                    </button>
+                  </div>
                 </div>
-                <div style={{ display: 'flex', gap: '4px' }}>
-                  {[5, 10, 15, 20].map((count) => (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
+                  {[5, 10, 15, 20, 30, 50].map((count) => (
                     <button
                       key={count}
-                      onClick={() => setStrikeCount(count)}
+                      type="button"
+                      onClick={() => updateStrikeCount(count)}
                       style={{
-                        flex: 1,
                         padding: '3px 0',
-                        fontSize: '0.72rem',
+                        fontSize: '0.70rem',
                         fontWeight: strikeCount === count ? 600 : 400,
                         backgroundColor: strikeCount === count ? '#5F7A9A' : '#121212',
-                        borderColor: strikeCount === count ? '#5F7A9A' : '#1f1f1f',
+                        border: `1px solid ${strikeCount === count ? '#5F7A9A' : '#1f1f1f'}`,
                         color: strikeCount === count ? '#ffffff' : '#CCCCCC',
                         borderRadius: '3px',
                         cursor: 'pointer'
@@ -389,8 +456,8 @@ export const OptionChainWidget: React.FC<OptionChainWidgetProps> = ({
                     </button>
                   ))}
                 </div>
-                <div style={{ fontSize: '0.65rem', color: '#CCCCCC', textAlign: 'center' }}>
-                  {strikeCount} above & {strikeCount} below ({strikeCount * 2 + 1} total)
+                <div style={{ fontSize: '0.64rem', color: '#9ca3af', textAlign: 'center' }}>
+                  {strikeCount} above & {strikeCount} below ({visibleRows.length} rows shown)
                 </div>
               </div>
 
