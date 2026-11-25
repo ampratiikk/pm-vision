@@ -256,15 +256,24 @@ class PriceBoxPrimitive implements ISeriesPrimitive<Time> {
 }
 
 /**
- * Reset chart view: fit all data to screen with right-side breathing room and auto price scale.
- * Uses fitContent() (the correct Lightweight Charts API) then applies rightOffset spacing.
+ * Reset chart view: spacious zoomed-in focus on recent candles with generous right-side
+ * breathing room before the Y-axis and auto-scaled vertical margins.
  */
 function resetChartView(chartApi: IChartApi | null) {
   if (!chartApi) return;
   try {
-    chartApi.timeScale().fitContent();
-    chartApi.timeScale().applyOptions({ rightOffset: 15 });
-    chartApi.priceScale('right').applyOptions({ autoScale: true });
+    chartApi.timeScale().applyOptions({
+      rightOffset: 15,
+      barSpacing: 12
+    });
+    chartApi.timeScale().resetTimeScale();
+    chartApi.priceScale('right').applyOptions({
+      autoScale: true,
+      scaleMargins: {
+        top: 0.16,
+        bottom: 0.14
+      }
+    });
     chartApi.priceScale('right').setAutoScale(true);
   } catch (e) {
     console.warn('[CandlestickChart] Error resetting chart view:', e);
@@ -791,8 +800,8 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
           textColor: '#5F7A9A',
           autoScale: true,
           scaleMargins: {
-            top: 0.12,
-            bottom: 0.15
+            top: 0.16,
+            bottom: 0.14
           }
         },
         timeScale: {
@@ -800,7 +809,8 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
           timeVisible: true,
           secondsVisible: false,
           rightOffset: 15,
-          barSpacing: 6,
+          barSpacing: 12,
+          minBarSpacing: 1,
           fixLeftEdge: false,
           fixRightEdge: false
         },
@@ -812,7 +822,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
             price: true
           },
           axisDoubleClickReset: {
-            time: true,
+            time: false,
             price: true
           }
         },
@@ -1028,8 +1038,13 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
         const rightScale = chartRef.current.priceScale('right');
         const scaleWidth = rightScale.width() || 65;
         if (e.clientX >= rect.right - scaleWidth - 5) {
-          rightScale.applyOptions({ autoScale: true });
+          rightScale.applyOptions({
+            autoScale: true,
+            scaleMargins: { top: 0.16, bottom: 0.14 }
+          });
           rightScale.setAutoScale(true);
+        } else if (e.clientY >= rect.bottom - 28) {
+          resetChartView(chartRef.current);
         }
       };
 

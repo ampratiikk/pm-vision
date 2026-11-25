@@ -20,13 +20,41 @@ export async function fetchMarketStatus(): Promise<{
   return response.json();
 }
 
-export async function fetchMarketHistory(resolution: string, symbol: string = 'NIFTY 50'): Promise<ChartCandleTick[]> {
+export interface MarketHistoryResponse {
+  candles: ChartCandleTick[];
+  casPrice?: number;
+  source?: 'FYERS' | 'PUBLIC';
+  isBrokerConnected?: boolean;
+}
+
+export async function fetchMarketHistoryDetailed(
+  resolution: string,
+  symbol: string = 'NIFTY 50'
+): Promise<MarketHistoryResponse> {
   const response = await fetch(`/api/market/history?resolution=${encodeURIComponent(resolution)}&symbol=${encodeURIComponent(symbol)}`);
   if (!response.ok) {
     throw new Error(`History fetch error: ${response.status}`);
   }
   const json = await response.json();
-  return json.candles || [];
+  return {
+    candles: json.candles || [],
+    casPrice: typeof json.casPrice === 'number' ? json.casPrice : undefined,
+    source: json.source,
+    isBrokerConnected: typeof json.isBrokerConnected === 'boolean' ? json.isBrokerConnected : undefined
+  };
+}
+
+export async function fetchMarketHistory(resolution: string, symbol: string = 'NIFTY 50'): Promise<ChartCandleTick[]> {
+  const res = await fetchMarketHistoryDetailed(resolution, symbol);
+  return res.candles;
+}
+
+export async function fetchFyersLoginUrl(): Promise<{ loginUrl: string; appId: string; redirectUri: string }> {
+  const response = await fetch('/api/market/fyers-login-url');
+  if (!response.ok) {
+    throw new Error(`Failed to load FYERS login URL: ${response.status}`);
+  }
+  return response.json();
 }
 
 export async function fetchOptionChainByExpiry(expiry: string): Promise<MarketSnapshotPayload> {

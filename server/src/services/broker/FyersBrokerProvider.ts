@@ -30,8 +30,56 @@ export class FyersBrokerProvider implements IBrokerProvider {
     return this.accessToken;
   }
 
+  private checkAuthError(status: number, json: any): boolean {
+    if (
+      status === 401 ||
+      status === 403 ||
+      json?.code === -16 ||
+      json?.code === -17 ||
+      json?.code === -15 ||
+      json?.code === -8 ||
+      (typeof json?.message === 'string' && /token.*expir|invalid.*token|unauthorized/i.test(json.message))
+    ) {
+      if (this.connected) {
+        console.warn('[FYERS Provider] Session/Token expired or unauthorized:', json?.message || status);
+      }
+      this.connected = false;
+      return true;
+    }
+    return false;
+  }
+
+  private extractCodeOrToken(input: string): string {
+    let clean = input.trim();
+    if (clean.includes('auth_code=') || clean.startsWith('http://') || clean.startsWith('https://')) {
+      try {
+        const parsed = new URL(clean);
+        const authCode = parsed.searchParams.get('auth_code');
+        if (authCode) return authCode.trim();
+        const code = parsed.searchParams.get('code');
+        if (code && code !== '200') return code.trim();
+      } catch {
+        const match = clean.match(/auth_code=([^&\s]+)/);
+        if (match?.[1]) return decodeURIComponent(match[1]).trim();
+      }
+    }
+    return clean;
+  }
+
+  private isFyersAccessTokenJwt(token: string): boolean {
+    try {
+      const parts = token.split('.');
+      if (parts.length !== 3) return false;
+      const payloadJson = Buffer.from(parts[1], 'base64url').toString('utf8');
+      const payload = JSON.parse(payloadJson);
+      return payload?.sub === 'access_token';
+    } catch {
+      return false;
+    }
+  }
+
   public async updateToken(tokenOrAuthCode: string): Promise<{ success: boolean; message: string; spotPrice?: number }> {
-    const raw = tokenOrAuthCode.trim();
+    const raw = this.extractCodeOrToken(tokenOrAuthCode);
     if (!raw) {
       return { success: false, message: 'Token or auth code cannot be empty.' };
     }
@@ -40,8 +88,8 @@ export class FyersBrokerProvider implements IBrokerProvider {
     const secretKey = process.env.FYERS_SECRET_KEY || 'MMOAAII27N';
     let candidateToken = raw;
 
-    // Check if input is an authorization code and exchange it
-    if (raw.length > 50) {
+    // Exchange OAuth authorization_code unless input is already an access_token JWT
+    if (raw.length > 30 && !this.isFyersAccessTokenJwt(raw)) {
       try {
         const appIdHash = crypto.createHash('sha256').update(`${appId}:${secretKey}`).digest('hex');
         const authRes = await fetch('https://api-t1.fyers.in/api/v3/validate-authcode', {
@@ -53,10 +101,12 @@ export class FyersBrokerProvider implements IBrokerProvider {
             code: raw
           })
         });
-        const authJson = await authRes.json();
+        const authJson: any = await authRes.json();
         if (authJson.s === 'ok' && authJson.access_token) {
           candidateToken = authJson.access_token;
           console.log('[FYERS Provider] Exchanged Auth Code for Access Token successfully!');
+        } else if (authJson.message) {
+          return { success: false, message: `FYERS auth code rejected: ${authJson.message}` };
         }
       } catch (err) {
         console.warn('[FYERS Provider] Auth code exchange check error:', err);
@@ -71,7 +121,7 @@ export class FyersBrokerProvider implements IBrokerProvider {
           Authorization: `${appId}:${candidateToken}`
         }
       });
-      const json = await res.json();
+      const json: any = await res.json();
       if (json.s === 'ok' && json.d && json.d.length > 0) {
         this.appId = appId;
         this.accessToken = candidateToken;
@@ -80,21 +130,27 @@ export class FyersBrokerProvider implements IBrokerProvider {
 
         // Persist token to local .env if present
         try {
-          const envPath = path.resolve(process.cwd(), 'server/.env');
-          if (fs.existsSync(envPath)) {
-            let content = fs.readFileSync(envPath, 'utf8');
-            if (content.includes('FYERS_ACCESS_TOKEN=')) {
-              content = content.replace(/FYERS_ACCESS_TOKEN=.*/, `FYERS_ACCESS_TOKEN=${candidateToken}`);
-            } else {
-              content += `\nFYERS_ACCESS_TOKEN=${candidateToken}\n`;
+          const candidatePaths = [
+            path.resolve(process.cwd(), 'server/.env'),
+            path.resolve(process.cwd(), '.env')
+          ];
+          for (const envPath of candidatePaths) {
+            if (fs.existsSync(envPath)) {
+              let content = fs.readFileSync(envPath, 'utf8');
+              if (content.includes('FYERS_ACCESS_TOKEN=')) {
+                content = content.replace(/FYERS_ACCESS_TOKEN=.*/, `FYERS_ACCESS_TOKEN=${candidateToken}`);
+              } else {
+                content += `\nFYERS_ACCESS_TOKEN=${candidateToken}\n`;
+              }
+              fs.writeFileSync(envPath, content, 'utf8');
+              break;
             }
-            fs.writeFileSync(envPath, content, 'utf8');
           }
         } catch (e) {
-          console.warn('[FYERS Provider] Could not write to server/.env:', e);
+          console.warn('[FYERS Provider] Could not persist to .env:', e);
         }
 
-        const ltp = json.d[0].v?.lp || 25349.65;
+        const ltp = json.d[0].v?.lp || 25819.25;
         console.log(`[FYERS Provider] Authenticated! Live NIFTY Spot: ${ltp}`);
         return { success: true, message: 'Successfully authenticated with FYERS!', spotPrice: ltp };
       } else {
@@ -148,37 +204,41 @@ export class FyersBrokerProvider implements IBrokerProvider {
    * Fetch live quotes for symbols from FYERS REST API
    */
   public async fetchQuotes(symbols: string[]): Promise<MarketTick[]> {
-    if (!this.appId || !this.accessToken) return [];
+    if (!this.appId || !this.accessToken || symbols.length === 0) return [];
 
     try {
       const url = `https://api-t1.fyers.in/data/quotes?symbols=${encodeURIComponent(symbols.join(','))}`;
       const res = await fetch(url, {
         headers: {
           Authorization: `${this.appId}:${this.accessToken}`
-        }
+        },
+        signal: AbortSignal.timeout(6000)
       });
 
-      const json = await res.json();
+      const json: any = await res.json();
       if (json.s !== 'ok' || !json.d) {
+        this.checkAuthError(res.status, json);
         return [];
       }
 
-      return json.d.map((item: any) => {
-        const v = item.v || {};
-        return {
-          id: item.n?.toLowerCase().replace(/[^a-z0-9]/g, '-') || 'fyers-tick',
-          name: v.short_name || item.n || 'NIFTY',
-          symbol: item.n || 'NIFTY',
-          ltp: v.lp || 0,
-          change: v.ch || 0,
-          changePct: v.chp || 0,
-          high: v.high_price || v.lp || 0,
-          low: v.low_price || v.lp || 0,
-          open: v.open_price || v.lp || 0,
-          vwap: v.atp || v.lp || 0,
-          volume: v.volume ? `${(v.volume / 1000000).toFixed(1)}M` : '0M'
-        };
-      });
+      return json.d
+        .filter((item: any) => item && item.v && typeof item.v.lp === 'number' && item.v.lp > 0)
+        .map((item: any) => {
+          const v = item.v || {};
+          return {
+            id: item.n?.toLowerCase().replace(/[^a-z0-9]/g, '-') || 'fyers-tick',
+            name: v.short_name || item.n || 'NIFTY',
+            symbol: item.n || 'NIFTY',
+            ltp: v.lp || 0,
+            change: v.ch || 0,
+            changePct: v.chp || 0,
+            high: v.high_price || v.lp || 0,
+            low: v.low_price || v.lp || 0,
+            open: v.open_price || v.lp || 0,
+            vwap: v.atp || v.lp || 0,
+            volume: v.volume ? `${(v.volume / 1000000).toFixed(1)}M` : '0M'
+          };
+        });
     } catch (err) {
       console.error('[FYERS Provider] Error fetching quotes:', err);
       return [];
@@ -191,8 +251,10 @@ export class FyersBrokerProvider implements IBrokerProvider {
   public toFyersSymbol(symbol: string): string {
     const s = symbol.trim().toUpperCase();
     if (s.includes(':')) return s;
-    if (s === 'NIFTY 50' || s === 'NIFTY' || s === 'NIFTY50') return 'NSE:NIFTY50-INDEX';
-    if (s === 'NIFTY BANK' || s === 'BANKNIFTY') return 'NSE:NIFTYBANK-INDEX';
+    if (s === 'NIFTY 50' || s === 'NIFTY' || s === 'NIFTY50' || s === 'NIFTY FUT-I' || s === 'NIFTY FUT-II' || s === 'NIFTY FUT-III') {
+      return 'NSE:NIFTY50-INDEX';
+    }
+    if (s === 'NIFTY BANK' || s === 'BANK NIFTY' || s === 'BANKNIFTY') return 'NSE:NIFTYBANK-INDEX';
     if (s === 'NIFTY IT') return 'NSE:NIFTYIT-INDEX';
     if (s === 'NIFTY FIN SERVICE' || s === 'FINNIFTY') return 'NSE:FINNIFTY-INDEX';
     if (s === 'NIFTY AUTO') return 'NSE:NIFTYAUTO-INDEX';
@@ -258,23 +320,24 @@ export class FyersBrokerProvider implements IBrokerProvider {
     }
 
     try {
-      const toDate = new Date();
-      const fromDate = new Date();
-      fromDate.setDate(fromDate.getDate() - lookbackDays);
+      const istNow = new Date(Date.now() + 19800000);
+      const istFrom = new Date(istNow.getTime() - lookbackDays * 86400000);
 
-      const toStr = toDate.toISOString().slice(0, 10);
-      const fromStr = fromDate.toISOString().slice(0, 10);
+      const toStr = istNow.toISOString().slice(0, 10);
+      const fromStr = istFrom.toISOString().slice(0, 10);
       const mappedSymbol = this.toFyersSymbol(symbol);
 
       const url = `https://api-t1.fyers.in/data/history?symbol=${encodeURIComponent(mappedSymbol)}&resolution=${fyersRes}&date_format=1&range_from=${fromStr}&range_to=${toStr}&cont_flag=1`;
       const res = await fetch(url, {
         headers: {
           Authorization: `${this.appId}:${this.accessToken}`
-        }
+        },
+        signal: AbortSignal.timeout(8000)
       });
 
-      const json = await res.json();
+      const json: any = await res.json();
       if (json.s !== 'ok' || !json.candles || !Array.isArray(json.candles)) {
+        this.checkAuthError(res.status, json);
         return [];
       }
 
@@ -324,11 +387,13 @@ export class FyersBrokerProvider implements IBrokerProvider {
       const res = await fetch(url, {
         headers: {
           Authorization: `${this.appId}:${this.accessToken}`
-        }
+        },
+        signal: AbortSignal.timeout(8000)
       });
 
-      const json = await res.json();
+      const json: any = await res.json();
       if (json.s !== 'ok' || !json.data || !json.data.optionsChain) {
+        this.checkAuthError(res.status, json);
         return null;
       }
 

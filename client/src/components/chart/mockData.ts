@@ -1,7 +1,7 @@
 import { CandlestickData, Time } from './types';
 
 function toEpoch(dateStr: string): Time {
-  return Math.floor(new Date(`${dateStr}T09:15:00+05:30`).getTime() / 1000) as Time;
+  return (Math.floor(new Date(`${dateStr}T09:15:00+05:30`).getTime() / 1000) + 19800) as Time;
 }
 
 /**
@@ -28,5 +28,5 @@ export const SAMPLE_CANDLESTICK_DATA: CandlestickData<Time>[] = [
   { time: toEpoch('2026-02-23'), open: 25920.2, high: 26010.8, low: 25870.0, close: 25960.0 },
   { time: toEpoch('2026-02-24'), open: 25970.0, high: 26040.0, low: 25890.4, close: 25800.6 },
   { time: toEpoch('2026-02-25'), open: 25820.0, high: 25900.0, low: 25740.0, close: 25800.6 },
-  { time: toEpoch('2026-02-26'), open: 25929.15, high: 25992.6, low: 25343.85, close: 25349.65 }
+  { time: toEpoch('2026-02-26'), open: 25805.0, high: 25860.4, low: 25760.2, close: 25819.25 }
 ];

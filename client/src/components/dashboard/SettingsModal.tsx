@@ -1,11 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CandleColorSettings } from '../chart/types';
 import { TradingViewColorPicker } from './TradingViewColorPicker';
-import { updateBrokerToken, executeAutoLogin } from '../../services/api';
+import { updateBrokerToken, executeAutoLogin, fetchFyersLoginUrl } from '../../services/api';
+
+const FALLBACK_FYERS_LOGIN_URL =
+  'https://api-t1.fyers.in/api/v3/generate-authcode?client_id=R3ZD795FUR-100&redirect_uri=https://trade.fyers.in/api-login/redirect-uri/index.html&response_type=code&state=pmvision';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  initialTab?: 'chart' | 'system';
   candleColors: CandleColorSettings;
   onUpdateCandleColors: (colors: CandleColorSettings) => void;
   onResetCandleColors: () => void;
@@ -18,6 +22,7 @@ interface SettingsModalProps {
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
   onClose,
+  initialTab = 'chart',
   candleColors,
   onUpdateCandleColors,
   onResetCandleColors,
@@ -26,8 +31,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   isBrokerConnected = false,
   onBrokerConnected
 }) => {
-  const [activeTab, setActiveTab] = useState<'chart' | 'system'>('chart');
-  const [authMode, setAuthMode] = useState<'auto' | 'manual'>('auto');
+  const [activeTab, setActiveTab] = useState<'chart' | 'system'>(initialTab);
+  const [authMode, setAuthMode] = useState<'auto' | 'manual'>('manual');
+  const [fyersLoginUrl, setFyersLoginUrl] = useState<string>(FALLBACK_FYERS_LOGIN_URL);
+
+  useEffect(() => {
+    if (isOpen) {
+      setActiveTab(initialTab);
+      fetchFyersLoginUrl()
+        .then((res) => {
+          if (res?.loginUrl) setFyersLoginUrl(res.loginUrl);
+        })
+        .catch(() => {});
+    }
+  }, [isOpen, initialTab]);
 
   // Method 2: Headless Auto-Login State
   const [autoFyId, setAutoFyId] = useState('FAK52898');
@@ -489,10 +506,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <form onSubmit={handleTokenSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <div style={{ fontSize: '0.68rem', color: '#737373', lineHeight: 1.4 }}>
-                        Open FYERS login, copy the authorization code, and paste it below.
+                        Open FYERS login, copy the redirect URL (or auth_code), and paste it below.
                       </div>
                       <a
-                        href="https://api-t1.fyers.in/api/v3/generate-authcode?client_id=R3ZD795FUR-100&redirect_uri=https://trade.fyers.in/api-login/redirect-uri/index.html&response_type=code&state=pmvision"
+                        href={fyersLoginUrl}
                         target="_blank"
                         rel="noopener noreferrer"
                         style={{
@@ -520,7 +537,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         type="password"
                         value={tokenInput}
                         onChange={(e) => setTokenInput(e.target.value)}
-                        placeholder="Paste FYERS Access Token or Auth Code here..."
+                        placeholder="Paste Redirect URL, Auth Code, or Access Token..."
                         style={{
                           flex: 1,
                           backgroundColor: '#121212',

@@ -121,6 +121,8 @@ export interface MarketSnapshotPayload {
   maxPain: number;
   indiaVix: number;
   marketStatus: MarketStatus;
+  dataSource?: 'FYERS' | 'PUBLIC';
+  isBrokerConnected?: boolean;
 }
 
 export interface MarketSnapshotMessage extends BaseWebSocketMessage {
@@ -184,25 +186,28 @@ export const NSE_TRADING_HOLIDAYS: Record<string, string> = {
   '2025-12-25': 'Christmas'
 };
 
+function getISTShiftedDate(checkDate: Date = new Date()): Date {
+  return new Date(checkDate.getTime() + 19800000);
+}
+
 /**
  * Checks if the Indian Market (NSE) is actively open for normal trading.
  * Returns false on weekends, market holidays, and outside 09:15-15:30 IST.
  */
 export function isIndianMarketOpen(checkDate: Date = new Date()): boolean {
-  const utc = checkDate.getTime() + checkDate.getTimezoneOffset() * 60000;
-  const istDate = new Date(utc + 3600000 * 5.5);
+  const ist = getISTShiftedDate(checkDate);
 
-  const day = istDate.getDay();
+  const day = ist.getUTCDay();
   if (day === 0 || day === 6) {
     return false;
   }
 
-  const dateStr = istDate.toISOString().slice(0, 10);
+  const dateStr = ist.toISOString().slice(0, 10);
   if (NSE_TRADING_HOLIDAYS[dateStr]) {
     return false;
   }
 
-  const currentMinute = istDate.getHours() * 60 + istDate.getMinutes();
+  const currentMinute = ist.getUTCHours() * 60 + ist.getUTCMinutes();
   const marketOpenMinute = 9 * 60 + 15; // 09:15 AM IST
   const marketCloseMinute = 15 * 60 + 30; // 03:30 PM IST
 
@@ -220,10 +225,9 @@ export interface MarketSessionInfo {
  * Returns user-facing market session info (label & dot color) accounting for holidays & weekends.
  */
 export function getMarketSessionInfo(checkDate: Date = new Date()): MarketSessionInfo {
-  const utc = checkDate.getTime() + checkDate.getTimezoneOffset() * 60000;
-  const istDate = new Date(utc + 3600000 * 5.5);
+  const ist = getISTShiftedDate(checkDate);
 
-  const dateStr = istDate.toISOString().slice(0, 10);
+  const dateStr = ist.toISOString().slice(0, 10);
   const holidayName = NSE_TRADING_HOLIDAYS[dateStr];
   if (holidayName) {
     return {
@@ -234,7 +238,7 @@ export function getMarketSessionInfo(checkDate: Date = new Date()): MarketSessio
     };
   }
 
-  const day = istDate.getDay();
+  const day = ist.getUTCDay();
   if (day === 0 || day === 6) {
     return {
       status: 'CLOSED',
@@ -244,7 +248,7 @@ export function getMarketSessionInfo(checkDate: Date = new Date()): MarketSessio
     };
   }
 
-  const currentMinute = istDate.getHours() * 60 + istDate.getMinutes();
+  const currentMinute = ist.getUTCHours() * 60 + ist.getUTCMinutes();
   const preStart = 9 * 60; // 09:00 AM
   const normalStart = 9 * 60 + 15; // 09:15 AM
   const normalEnd = 15 * 60 + 30; // 03:30 PM

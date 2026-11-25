@@ -41,12 +41,10 @@ function toISTDate(time: Time): Date {
 }
 
 /**
- * Formats a Date object to YYYY-MM-DD in IST
+ * Formats an already IST-shifted Date object (or string/BusinessDay) to YYYY-MM-DD in IST
  */
 function getISTDateString(d: Date): string {
-  const utc = d.getTime() + d.getTimezoneOffset() * 60000;
-  const ist = new Date(utc + 3600000 * 5.5);
-  return ist.toISOString().slice(0, 10);
+  return d.toISOString().slice(0, 10);
 }
 
 /**

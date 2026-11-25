@@ -8,7 +8,7 @@ import {
   getMarketSessionInfo,
   MarketSessionInfo
 } from '@pm-vision/shared';
-import { fetchHealth, fetchMarketHistory, fetchOptionChainByExpiry, fetchMarketStatus } from './services/api';
+import { fetchHealth, fetchMarketHistoryDetailed, fetchOptionChainByExpiry, fetchMarketStatus } from './services/api';
 import { createWebSocketConnection, WebSocketClient } from './services/websocket';
 import {
   CandlestickChart,
@@ -58,10 +58,12 @@ export function App() {
   const [activePage, setActivePage] = useState<AppPage>('dashboard');
   const [healthStatus, setHealthStatus] = useState<'online' | 'offline' | 'loading'>('loading');
   const [wsStatus, setWsStatus] = useState<'online' | 'offline' | 'loading'>('loading');
-  const [isBrokerConnected, setIsBrokerConnected] = useState<boolean>(true);
+  const [isBrokerConnected, setIsBrokerConnected] = useState<boolean>(false);
+  const [dataSource, setDataSource] = useState<'FYERS' | 'PUBLIC'>('PUBLIC');
   const [activeTimeFilter, setActiveTimeFilter] = useState<string>('15m');
   const [isChartLoading, setIsChartLoading] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<'chart' | 'system'>('chart');
 
   // Market session status (Markets Live / Markets Closed / Holiday / Pre / Post)
   const [sessionInfo, setSessionInfo] = useState<MarketSessionInfo>(getMarketSessionInfo);
@@ -136,9 +138,9 @@ export function App() {
     } catch {}
   };
 
-  // Watchlist State (Overlay Slider, Docked, or Fullscreen)
+  // Watchlist State (Non-overlay inline panel inside chart workspace)
   const [isWatchlistOpen, setIsWatchlistOpen] = useState<boolean>(false);
-  const [watchlistMode, setWatchlistMode] = useState<WatchlistMode>('overlay');
+  const [watchlistMode, setWatchlistMode] = useState<WatchlistMode>('docked');
 
   // Symbol Search State
   const [isSymbolSearchOpen, setIsSymbolSearchOpen] = useState<boolean>(false);
@@ -197,10 +199,10 @@ export function App() {
   const [optionChain, setOptionChain] = useState<OptionRow[]>([]);
   const [expiries, setExpiries] = useState<ExpiryOption[]>([]);
   const [selectedExpiry, setSelectedExpiry] = useState<string>('');
-  const [spotPrice, setSpotPrice] = useState<number>(25349.65);
+  const [spotPrice, setSpotPrice] = useState<number>(25819.25);
 
   // Chart Historical Data State
-  const [chartCandles, setChartCandles] = useState<CandlestickData<Time>[]>(SAMPLE_CANDLESTICK_DATA);
+  const [chartCandles, setChartCandles] = useState<CandlestickData<Time>[]>([]);
   const chartRef = useRef<ChartImperativeHandle | null>(null);
   const wsClientRef = useRef<WebSocketClient | null>(null);
 
@@ -220,17 +222,31 @@ export function App() {
     if (activeChartSymbol === 'NIFTY 50') return spotPrice;
     const sec = securities.find((s) => s.symbol.toUpperCase() === activeChartSymbol.toUpperCase());
     if (sec && sec.ltp > 0) return sec.ltp;
+    if (chartCandles && chartCandles.length > 0) {
+      return chartCandles[chartCandles.length - 1].close;
+    }
     const found = [...NIFTY_50_CONSTITUENTS, ...NIFTY_INDICES].find(
       (i) => i.symbol.toUpperCase() === activeChartSymbol.toUpperCase()
     );
-    return found?.basePrice || (activeChartSymbol === 'NIFTY 50' ? spotPrice : 0);
-  }, [activeChartSymbol, spotPrice, securities]);
+    return found?.basePrice || 0;
+  }, [activeChartSymbol, spotPrice, securities, chartCandles]);
 
   const loadHistory = useCallback(async (resolution: string, symbol?: string) => {
     const targetSymbol = symbol || activeChartSymbolRef.current;
     setIsChartLoading(true);
     try {
-      const candles = await fetchMarketHistory(resolution, targetSymbol);
+      const historyRes = await fetchMarketHistoryDetailed(resolution, targetSymbol);
+      const candles = historyRes.candles;
+
+      if (typeof historyRes.isBrokerConnected === 'boolean') {
+        setIsBrokerConnected(historyRes.isBrokerConnected);
+      }
+      if (historyRes.source) {
+        setDataSource(historyRes.source);
+      }
+      if (targetSymbol === 'NIFTY 50' && historyRes.casPrice && historyRes.casPrice > 0) {
+        setSpotPrice(historyRes.casPrice);
+      }
 
       if (candles && candles.length > 0) {
         if (targetSymbol === 'NIFTY 50') {
@@ -239,10 +255,10 @@ export function App() {
         setChartCandles(candles as any);
         chartRef.current?.setData(candles as any);
       } else {
-        // Fallback: accurately scale based on the stock's actual base price
+        // Emergency offline fallback only if upstream returns empty
         const found = [...NIFTY_50_CONSTITUENTS, ...NIFTY_INDICES].find((i) => i.symbol === targetSymbol);
-        const targetPrice = found?.basePrice || (targetSymbol === 'NIFTY 50' ? 25349.65 : 1000);
-        const ratio = targetPrice / 25349.65;
+        const targetPrice = found?.basePrice || (targetSymbol === 'NIFTY 50' ? 25819.25 : 1000);
+        const ratio = targetPrice / 25819.25;
         const base = (baseHistoryRef.current && baseHistoryRef.current.length > 0)
           ? baseHistoryRef.current
           : SAMPLE_CANDLESTICK_DATA;
@@ -468,6 +484,8 @@ export function App() {
 
             if (data.expiries && data.expiries.length > 0) setExpiries(data.expiries);
             if (data.selectedExpiry) setSelectedExpiry(data.selectedExpiry);
+            if (typeof data.isBrokerConnected === 'boolean') setIsBrokerConnected(data.isBrokerConnected);
+            if (data.dataSource) setDataSource(data.dataSource);
 
             // Real-time chart candle updates during genuine open market hours
             if (data.marketStatus === 'OPEN' && chartRef.current) {
@@ -605,8 +623,44 @@ export function App() {
           />
         </div>
 
-        {/* Header Right: Market Status */}
+        {/* Header Right: Market Status & Broker Feed */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+          {/* Broker / Live Feed Status Pill (Click to configure FYERS token) */}
+          <button
+            onClick={() => {
+              setSettingsInitialTab('system');
+              setIsSettingsOpen(true);
+            }}
+            title={isBrokerConnected ? 'FYERS Live Broker Connected (Click for System Status)' : 'Using Public NSE/Yahoo Feed - Click to connect FYERS for live option chain & sub-2s ticks'}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '0.70rem',
+              color: isBrokerConnected ? '#10b981' : '#9ca3af',
+              fontWeight: 600,
+              padding: '3px 8px',
+              borderRadius: '4px',
+              backgroundColor: isBrokerConnected ? 'rgba(16, 185, 129, 0.08)' : 'rgba(95, 122, 154, 0.10)',
+              border: `1px solid ${isBrokerConnected ? 'rgba(16, 185, 129, 0.3)' : 'rgba(95, 122, 154, 0.35)'}`,
+              cursor: 'pointer'
+            }}
+          >
+            <span style={{
+              width: '6px',
+              height: '6px',
+              borderRadius: '50%',
+              backgroundColor: isBrokerConnected ? '#10b981' : '#5F7A9A'
+            }} />
+            <span>
+              {isBrokerConnected
+                ? 'FYERS Live'
+                : dataSource === 'PUBLIC'
+                  ? 'Public Feed · Connect FYERS'
+                  : 'Connect FYERS'}
+            </span>
+          </button>
+
           {/* Domestic Market Status */}
           <div style={{
             display: 'flex',
@@ -928,6 +982,42 @@ export function App() {
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {/* Watchlist Toggle Button (Inline Non-Overlay inside Chart Tab) */}
+                  <button
+                    onClick={() => {
+                      if (isWatchlistOpen) {
+                        setIsWatchlistOpen(false);
+                      } else {
+                        setWatchlistMode('docked');
+                        setIsWatchlistOpen(true);
+                      }
+                    }}
+                    title="Toggle Watchlist Panel inside Chart (NIFTY 50 & Indices)"
+                    style={{
+                      padding: '2px 8px',
+                      fontSize: '0.70rem',
+                      backgroundColor: isWatchlistOpen ? 'rgba(95, 122, 154, 0.2)' : '#121212',
+                      border: `1px solid ${isWatchlistOpen ? '#5F7A9A' : '#262626'}`,
+                      color: isWatchlistOpen ? '#5F7A9A' : '#e5e7eb',
+                      borderRadius: '3px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      fontWeight: 600
+                    }}
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#5F7A9A" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="8" y1="6" x2="21" y2="6"></line>
+                      <line x1="8" y1="12" x2="21" y2="12"></line>
+                      <line x1="8" y1="18" x2="21" y2="18"></line>
+                      <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                      <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                      <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                    </svg>
+                    <span>Watchlist</span>
+                  </button>
+
                   {/* Indicators Button */}
                   <button
                     onClick={() => setIsIndicatorsOpen(true)}
@@ -969,74 +1059,116 @@ export function App() {
                 </div>
               </div>
 
-              {/* Main Visual Display: Candlestick Chart */}
-              <div
-                onContextMenu={handleChartContextMenu}
-                style={{ flex: 1, position: 'relative', minHeight: 0 }}
-              >
-                <CandlestickChart
-                  ref={chartRef}
-                  data={chartCandles}
-                  casPrice={currentCasPrice}
-                  timeframe={activeTimeFilter}
-                  indicators={indicators}
-                  height="100%"
-                  style={{ height: '100%' }}
-                  onOpenIndicatorSettings={(id) => {
-                    setSelectedIndicatorId(id || null);
-                    setIsIndicatorsOpen(true);
-                  }}
-                  seriesOptions={{
-                    upColor: candleColors.upBodyColor,
-                    downColor: candleColors.downBodyColor,
-                    borderUpColor: candleColors.upBorderColor,
-                    borderDownColor: candleColors.downBorderColor,
-                    wickUpColor: candleColors.upWickColor,
-                    wickDownColor: candleColors.downWickColor
-                  }}
-                />
+              {/* Chart + Inline Non-Overlay Watchlist Flex Workspace */}
+              <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden', position: 'relative' }}>
+                {/* Main Visual Display: Candlestick Chart */}
+                <div
+                  onContextMenu={handleChartContextMenu}
+                  style={{ flex: 1, position: 'relative', minWidth: 0, minHeight: 0 }}
+                >
+                  <CandlestickChart
+                    ref={chartRef}
+                    data={chartCandles}
+                    casPrice={currentCasPrice}
+                    timeframe={activeTimeFilter}
+                    indicators={indicators}
+                    height="100%"
+                    style={{ height: '100%' }}
+                    onOpenIndicatorSettings={(id) => {
+                      setSelectedIndicatorId(id || null);
+                      setIsIndicatorsOpen(true);
+                    }}
+                    seriesOptions={{
+                      upColor: candleColors.upBodyColor,
+                      downColor: candleColors.downBodyColor,
+                      borderUpColor: candleColors.upBorderColor,
+                      borderDownColor: candleColors.downBorderColor,
+                      wickUpColor: candleColors.upWickColor,
+                      wickDownColor: candleColors.downWickColor
+                    }}
+                  />
 
-                {/* Direct Keyboard Interval Jump Overlay (TradingView style) */}
-                {keyIntervalVisible && (
+                  {/* Direct Keyboard Interval Jump Overlay (TradingView style) */}
+                  {keyIntervalVisible && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '50%',
+                        left: '50%',
+                        transform: 'translate(-50%, -50%)',
+                        backgroundColor: 'rgba(8, 8, 8, 0.92)',
+                        backdropFilter: 'blur(10px)',
+                        border: '1px solid #5F7A9A',
+                        borderRadius: '8px',
+                        padding: '1.2rem 2.4rem',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: '0 16px 36px rgba(0, 0, 0, 0.9), 0 0 20px rgba(95, 122, 154, 0.3)',
+                        zIndex: 80,
+                        pointerEvents: 'none'
+                      }}
+                    >
+                      <div style={{
+                        fontSize: '48px',
+                        fontWeight: 700,
+                        color: '#5F7A9A',
+                        fontFamily: 'Quicksand, sans-serif',
+                        lineHeight: 1,
+                        letterSpacing: '0.02em'
+                      }}>
+                        {keyIntervalBuffer}m
+                      </div>
+                      <div style={{
+                        fontSize: '0.72rem',
+                        color: '#9CA3AF',
+                        marginTop: '8px',
+                        letterSpacing: '0.04em',
+                        fontWeight: 500
+                      }}>
+                        Press Enter to apply · Esc to cancel
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Inline Docked Watchlist Panel Inside Chart Tab (Non-Overlay) */}
+                {isWatchlistOpen && (
                   <div
                     style={{
-                      position: 'absolute',
-                      top: '50%',
-                      left: '50%',
-                      transform: 'translate(-50%, -50%)',
-                      backgroundColor: 'rgba(8, 8, 8, 0.92)',
-                      backdropFilter: 'blur(10px)',
-                      border: '1px solid #5F7A9A',
-                      borderRadius: '8px',
-                      padding: '1.2rem 2.4rem',
+                      width: watchlistMode === 'fullscreen' ? '100%' : (activePage === 'chart' ? '360px' : '290px'),
+                      maxWidth: watchlistMode === 'fullscreen' ? '100%' : '45%',
+                      flexShrink: 0,
+                      borderLeft: '1px solid #1a1a1a',
+                      backgroundColor: '#0a0a0a',
                       display: 'flex',
                       flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      boxShadow: '0 16px 36px rgba(0, 0, 0, 0.9), 0 0 20px rgba(95, 122, 154, 0.3)',
-                      zIndex: 80,
-                      pointerEvents: 'none'
+                      minHeight: 0,
+                      overflow: 'hidden'
                     }}
                   >
-                    <div style={{
-                      fontSize: '48px',
-                      fontWeight: 700,
-                      color: '#5F7A9A',
-                      fontFamily: 'Quicksand, sans-serif',
-                      lineHeight: 1,
-                      letterSpacing: '0.02em'
-                    }}>
-                      {keyIntervalBuffer}m
-                    </div>
-                    <div style={{
-                      fontSize: '0.72rem',
-                      color: '#9CA3AF',
-                      marginTop: '8px',
-                      letterSpacing: '0.04em',
-                      fontWeight: 500
-                    }}>
-                      Press Enter to apply · Esc to cancel
-                    </div>
+                    <WatchlistDrawer
+                      isOpen={true}
+                      mode={watchlistMode}
+                      onChangeMode={(m) => setWatchlistMode(m)}
+                      onClose={() => {
+                        setIsWatchlistOpen(false);
+                        setWatchlistMode('docked');
+                      }}
+                      securities={securities}
+                      activeSymbol={activeChartSymbol}
+                      highlightSymbols={highlightSymbols}
+                      onToggleHighlightSymbol={handleToggleHighlightSymbol}
+                      onSelectSymbol={(sym) => {
+                        const found = [...NIFTY_50_CONSTITUENTS, ...NIFTY_INDICES].find((i) => i.symbol === sym);
+                        if (found) {
+                          handleSelectSymbol(found.symbol, found.name, found.sector || (found.isIndex ? 'INDEX' : 'Stock'), found.basePrice);
+                        } else {
+                          handleSelectSymbol(sym, sym, 'Stock', spotPrice);
+                        }
+                      }}
+                    />
                   </div>
                 )}
               </div>
@@ -1069,7 +1201,7 @@ export function App() {
                   }} />
                 </div>
 
-                {/* Right Area: Stacked Sidebar or Docked Watchlist */}
+                {/* Right Area: Stacked Sidebar (Highlight Window, Basis Spread, Option Chain) */}
                 <div
                   ref={sidebarRef}
                   style={{
@@ -1081,27 +1213,7 @@ export function App() {
                     overflow: 'hidden'
                   }}
                 >
-                  {isWatchlistOpen && watchlistMode === 'docked' ? (
-                    <WatchlistDrawer
-                      isOpen={true}
-                      mode="docked"
-                      onChangeMode={(m) => setWatchlistMode(m)}
-                      onClose={() => setIsWatchlistOpen(false)}
-                      securities={securities}
-                      activeSymbol={activeChartSymbol}
-                      highlightSymbols={highlightSymbols}
-                      onToggleHighlightSymbol={handleToggleHighlightSymbol}
-                      onSelectSymbol={(sym) => {
-                        const found = [...NIFTY_50_CONSTITUENTS, ...NIFTY_INDICES].find((i) => i.symbol === sym);
-                        if (found) {
-                          handleSelectSymbol(found.symbol, found.name, found.sector || (found.isIndex ? 'INDEX' : 'Stock'), found.basePrice);
-                        } else {
-                          setActiveChartSymbol(sym);
-                        }
-                      }}
-                    />
-                  ) : (
-                    <>
+                  <>
                       {/* TOP SECTION: Highlight Window & Basis Spread */}
                       <div
                         ref={topSectionRef}
@@ -1212,7 +1324,6 @@ export function App() {
                         />
                       </div>
                     </>
-                  )}
                 </div>
               </>
             )}
@@ -1227,41 +1338,6 @@ export function App() {
             flexDirection: 'column'
           }}>
             <NiftyHeatmap />
-          </div>
-        )}
-
-        {/* Watchlist: Overlay Slider or Fullscreen Mode */}
-        {isWatchlistOpen && watchlistMode !== 'docked' && (
-          <div
-            style={{
-              position: 'absolute',
-              top: 0,
-              bottom: 0,
-              right: '44px',
-              left: watchlistMode === 'fullscreen' ? 0 : 'auto',
-              width: watchlistMode === 'fullscreen' ? 'auto' : '380px',
-              maxWidth: 'calc(100% - 44px)',
-              zIndex: 70
-            }}
-          >
-            <WatchlistDrawer
-              isOpen={true}
-              mode={watchlistMode}
-              onChangeMode={(m) => setWatchlistMode(m)}
-              onClose={() => setIsWatchlistOpen(false)}
-              securities={securities}
-              activeSymbol={activeChartSymbol}
-              highlightSymbols={highlightSymbols}
-              onToggleHighlightSymbol={handleToggleHighlightSymbol}
-              onSelectSymbol={(sym) => {
-                const found = [...NIFTY_50_CONSTITUENTS, ...NIFTY_INDICES].find((i) => i.symbol === sym);
-                if (found) {
-                  handleSelectSymbol(found.symbol, found.name, found.sector || (found.isIndex ? 'INDEX' : 'Stock'), found.basePrice);
-                } else {
-                  setActiveChartSymbol(sym);
-                }
-              }}
-            />
           </div>
         )}
 
@@ -1362,50 +1438,15 @@ export function App() {
                 <rect x="2" y="15" width="9" height="7" rx="1"></rect>
               </svg>
             </button>
-
-            {/* 3. Watchlist Icon (Below Heatmap) */}
-            <button
-              onClick={() => {
-                if (isWatchlistOpen) {
-                  setIsWatchlistOpen(false);
-                } else {
-                  setIsWatchlistOpen(true);
-                  if (watchlistMode !== 'docked' && watchlistMode !== 'fullscreen') {
-                    setWatchlistMode('overlay');
-                  }
-                }
-              }}
-              title="Watchlist (NIFTY 50 & Indices)"
-              style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '4px',
-                backgroundColor: isWatchlistOpen ? 'rgba(95, 122, 154, 0.2)' : 'transparent',
-                border: isWatchlistOpen ? '1px solid #5F7A9A' : '1px solid transparent',
-                color: isWatchlistOpen ? '#5F7A9A' : '#737373',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: 0,
-                transition: 'all 0.15s ease'
-              }}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="8" y1="6" x2="21" y2="6"></line>
-                <line x1="8" y1="12" x2="21" y2="12"></line>
-                <line x1="8" y1="18" x2="21" y2="18"></line>
-                <line x1="3" y1="6" x2="3.01" y2="6"></line>
-                <line x1="3" y1="12" x2="3.01" y2="12"></line>
-                <line x1="3" y1="18" x2="3.01" y2="18"></line>
-              </svg>
-            </button>
           </div>
 
           {/* Bottom of Right Panel: Settings Icon */}
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
             <button
-              onClick={() => setIsSettingsOpen(true)}
+              onClick={() => {
+                setSettingsInitialTab('chart');
+                setIsSettingsOpen(true);
+              }}
               title="Platform & Chart Settings (Candle Colors, System Status)"
               style={{
                 width: '32px',
@@ -1468,6 +1509,7 @@ export function App() {
           <div style={{ height: '1px', backgroundColor: '#1a1a1a', margin: '4px 0' }} />
           <div
             onClick={() => {
+              setSettingsInitialTab('chart');
               setIsSettingsOpen(true);
               setContextMenu((prev) => ({ ...prev, visible: false }));
             }}
@@ -1514,6 +1556,7 @@ export function App() {
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
+        initialTab={settingsInitialTab}
         candleColors={candleColors}
         onUpdateCandleColors={handleUpdateCandleColors}
         onResetCandleColors={handleResetCandleColors}
@@ -1522,7 +1565,16 @@ export function App() {
         isBrokerConnected={isBrokerConnected}
         onBrokerConnected={() => {
           setIsBrokerConnected(true);
+          setDataSource('FYERS');
           loadHistory(activeTimeFilter);
+          fetchOptionChainByExpiry('')
+            .then((d) => {
+              if (d?.optionChain) setOptionChain(d.optionChain);
+              if (d?.expiries && d.expiries.length > 0) setExpiries(d.expiries);
+              if (d?.selectedExpiry) setSelectedExpiry(d.selectedExpiry);
+              if (typeof d?.spotPrice === 'number' && d.spotPrice > 0) setSpotPrice(d.spotPrice);
+            })
+            .catch(() => {});
         }}
       />
     </div>

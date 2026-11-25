@@ -7,7 +7,7 @@ import {
   ALL_SECTORS
 } from './watchlistData';
 
-export type WatchlistMode = 'overlay' | 'docked' | 'fullscreen';
+export type WatchlistMode = 'docked' | 'fullscreen';
 
 interface WatchlistDrawerProps {
   isOpen: boolean;
@@ -24,8 +24,8 @@ interface WatchlistDrawerProps {
 export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
   isOpen,
   onClose,
-  mode,
-  onChangeMode,
+  mode: _mode,
+  onChangeMode: _onChangeMode,
   securities = [],
   activeSymbol = 'NIFTY 50',
   onSelectSymbol,
@@ -134,51 +134,18 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
     });
   };
 
-  // Styles based on mode
+  // Inline docked panel style (non-overlay, sits cleanly beside the chart canvas)
   const getContainerStyle = (): React.CSSProperties => {
-    const base: React.CSSProperties = {
+    return {
       backgroundColor: '#0a0a0a',
       color: '#e5e7eb',
       display: 'flex',
       flexDirection: 'column',
-      zIndex: 50,
-      fontFamily: 'Quicksand, sans-serif'
-    };
-
-    if (mode === 'docked') {
-      return {
-        ...base,
-        width: '100%',
-        height: '100%',
-        position: 'relative'
-      };
-    }
-
-    if (mode === 'fullscreen') {
-      return {
-        ...base,
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        width: '100vw',
-        height: '100vh',
-        zIndex: 100
-      };
-    }
-
-    // Default 'overlay' mode: Flyover drawer that does not distort main dashboard
-    return {
-      ...base,
-      position: 'fixed',
-      top: '48px',
-      right: '48px',
-      width: '420px',
-      height: 'calc(100vh - 48px)',
-      boxShadow: '-8px 0 32px rgba(0, 0, 0, 0.85)',
-      borderLeft: '1px solid #1f1f1f',
-      borderBottom: '1px solid #1f1f1f'
+      fontFamily: 'Quicksand, sans-serif',
+      width: '100%',
+      height: '100%',
+      position: 'relative',
+      overflow: 'hidden'
     };
   };
 
@@ -214,57 +181,8 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
           </span>
         </div>
 
-        {/* View Mode & Close Actions */}
+        {/* Close Action */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          {/* Dock / Fit into Main Dashboard Button */}
-          <button
-            onClick={() => onChangeMode(mode === 'docked' ? 'overlay' : 'docked')}
-            title={mode === 'docked' ? 'Float as Upper Layer (Slider)' : 'Fit into Main Dashboard (Docked)'}
-            style={{
-              padding: '3px 8px',
-              fontSize: '0.68rem',
-              backgroundColor: mode === 'docked' ? 'rgba(95, 122, 154, 0.3)' : '#141414',
-              color: mode === 'docked' ? '#5F7A9A' : '#CCCCCC',
-              border: `1px solid ${mode === 'docked' ? '#5F7A9A' : '#262626'}`,
-              borderRadius: '3px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px'
-            }}
-          >
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-              <line x1="15" y1="3" x2="15" y2="21"></line>
-            </svg>
-            <span>{mode === 'docked' ? 'Undock' : 'Dock'}</span>
-          </button>
-
-          {/* Fullscreen Button */}
-          <button
-            onClick={() => onChangeMode(mode === 'fullscreen' ? 'overlay' : 'fullscreen')}
-            title={mode === 'fullscreen' ? 'Exit Full Screen' : 'Full Screen Watchlist'}
-            style={{
-              padding: '3px 8px',
-              fontSize: '0.68rem',
-              backgroundColor: mode === 'fullscreen' ? 'rgba(95, 122, 154, 0.3)' : '#141414',
-              color: mode === 'fullscreen' ? '#5F7A9A' : '#CCCCCC',
-              border: `1px solid ${mode === 'fullscreen' ? '#5F7A9A' : '#262626'}`,
-              borderRadius: '3px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px'
-            }}
-          >
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polyline points="15 3 21 3 21 9"></polyline>
-              <polyline points="9 21 3 21 3 15"></polyline>
-              <line x1="21" y1="3" x2="14" y2="10"></line>
-              <line x1="3" y1="21" x2="10" y2="14"></line>
-            </svg>
-            <span>{mode === 'fullscreen' ? 'Exit Full' : 'Full'}</span>
-          </button>
 
           {/* Close Button */}
           <button
@@ -750,7 +668,7 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
       >
         <span>
           {activeTab === 'nifty50'
-            ? `${filteredNifty50.length} stocks across 10 sectors`
+            ? `${filteredNifty50.length} stocks across ${groupedNifty50.size} sectors`
             : `${filteredIndices.length} indices`}
         </span>
         <span style={{ color: '#5F7A9A' }}>Right-click for options</span>

@@ -7,31 +7,20 @@ export const marketRouter = Router();
 
 // GET /api/market/history?resolution=15m|30m|1H|1D&symbol=RELIANCE|NIFTY 50
 marketRouter.get('/history', async (req: Request, res: Response) => {
-  const resolution = (req.query.resolution as string) || 'D';
+  const resolution = (req.query.resolution as string) || '15m';
   const symbol = (req.query.symbol as string) || 'NIFTY 50';
   try {
-    const broker = marketEngine.getBrokerProvider();
-    const candles = await broker.fetchHistory(resolution, symbol);
-
-    // Official CAS / Closing Price determined as a reference price (never mutate candle OHLC!)
-    const snap = marketEngine.getSnapshot();
-    let casPrice = 0;
-    if (symbol.toUpperCase() === 'NIFTY 50') {
-      casPrice = snap.spotPrice;
-    } else {
-      const sec = snap.securities?.find((s) => s.symbol.toUpperCase() === symbol.toUpperCase());
-      if (sec && sec.ltp > 0) {
-        casPrice = sec.ltp;
-      }
-    }
+    const result = await marketEngine.fetchHistory(resolution, symbol);
 
     res.json({
       status: 'ok',
       symbol,
       resolution,
-      count: candles.length,
-      casPrice: casPrice > 0 ? casPrice : undefined,
-      candles
+      count: result.candles.length,
+      source: result.source,
+      isBrokerConnected: marketEngine.isBrokerConnected(),
+      casPrice: result.casPrice && result.casPrice > 0 ? result.casPrice : undefined,
+      candles: result.candles
     });
   } catch (err: any) {
     console.error('Error in /api/market/history:', err);

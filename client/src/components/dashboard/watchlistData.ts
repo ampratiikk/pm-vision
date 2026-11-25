@@ -710,13 +710,18 @@ export const NIFTY_INDICES: WatchlistItem[] = [
 export const ALL_SECTORS = [
   'All Sectors',
   'Financial Services',
+  'Oil, Gas & Consumable Fuels',
   'Information Technology',
-  'Oil, Gas & Energy',
-  'Automobile',
-  'FMCG',
+  'Automobile and Auto Components',
+  'Telecommunication',
+  'Fast Moving Consumer Goods',
+  'Healthcare',
   'Metals & Mining',
-  'Healthcare & Pharma',
-  'Construction & Infra',
+  'Construction',
+  'Consumer Services',
   'Consumer Durables',
-  'Telecom & Defense'
+  'Power',
+  'Services',
+  'Construction Materials',
+  'Capital Goods'
 ];

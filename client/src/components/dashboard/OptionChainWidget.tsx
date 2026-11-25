@@ -43,47 +43,44 @@ export interface OptionRow {
   };
 }
 
-export const DEFAULT_ATM_STRIKE = 24700;
-export const DEFAULT_SPOT_PRICE = 24700.80;
+export const DEFAULT_SPOT_PRICE = 25819.25;
 
 /**
- * Generate a comprehensive, realistic option chain dataset around Spot (24,700.80)
- * Covering strikes from 23,700 to 25,700 (step of 50).
+ * Generate a dynamically centered option chain around live Spot Price
+ * when broker live OI feed is not yet authenticated.
  */
-function buildFullOptionChain(): OptionRow[] {
+function buildDynamicOptionChain(centerSpot: number = DEFAULT_SPOT_PRICE): OptionRow[] {
   const rows: OptionRow[] = [];
-  const minStrike = 23700;
-  const maxStrike = 25700;
+  const atm = Math.round(centerSpot / 50) * 50;
+  const minStrike = atm - 1000;
+  const maxStrike = atm + 1000;
   const step = 50;
 
   for (let strike = minStrike; strike <= maxStrike; strike += step) {
-    const d = strike - DEFAULT_SPOT_PRICE; // distance from spot
+    const d = strike - centerSpot; // distance from spot
     const absD = Math.abs(d);
 
-    // Realistic Gamma (peaks at ATM)
+    // Gamma (peaks at ATM)
     const gamma = parseFloat(Math.max(0.0001, 0.0013 * Math.exp(-(absD * absD) / (2 * 180 * 180))).toFixed(4));
 
-    // Realistic Theta (most negative at ATM)
+    // Theta (most negative at ATM)
     const thetaBase = -15.8 * Math.exp(-(absD * absD) / (2 * 280 * 280));
     const callTheta = parseFloat((thetaBase * (1 + 0.04 * (d / 100))).toFixed(1));
     const putTheta = parseFloat((thetaBase * (1 - 0.04 * (d / 100))).toFixed(1));
 
-    // Realistic Delta
-    // Call: 0.50 at ATM, >0.50 ITM (strike < spot), <0.50 OTM (strike > spot)
+    // Delta
     const normD = -d / 280;
     const callDelta = parseFloat(Math.min(0.99, Math.max(0.01, 1 / (1 + Math.exp(-normD)))).toFixed(2));
     const putDelta = parseFloat((callDelta - 1).toFixed(2));
 
-    // Realistic LTP
-    // Time value peak at ATM ~170 pts
+    // Extrinsic & Intrinsic LTP
     const timeValue = 170 * Math.exp(-(absD * absD) / (2 * 250 * 250));
-    const intrinsicCall = Math.max(0, DEFAULT_SPOT_PRICE - strike);
-    const intrinsicPut = Math.max(0, strike - DEFAULT_SPOT_PRICE);
+    const intrinsicCall = Math.max(0, centerSpot - strike);
+    const intrinsicPut = Math.max(0, strike - centerSpot);
 
     const callLtp = parseFloat(Math.max(1.2, intrinsicCall + timeValue).toFixed(2));
     const putLtp = parseFloat(Math.max(1.2, intrinsicPut + timeValue).toFixed(2));
 
-    // Realistic OI with clustering near round numbers
     const roundWeight = strike % 500 === 0 ? 1.8 : strike % 100 === 0 ? 1.3 : 1.0;
     const baseOi = 65000 * Math.exp(-(absD * absD) / (2 * 450 * 450));
     const callOi = Math.round((baseOi * (0.8 + 0.4 * Math.sin(strike / 100)) * roundWeight) / 100) * 100;
@@ -111,8 +108,6 @@ function buildFullOptionChain(): OptionRow[] {
   return rows;
 }
 
-const FULL_OPTION_CHAIN: OptionRow[] = buildFullOptionChain();
-
 export interface OptionChainWidgetProps {
   data?: OptionRow[];
   spotPrice?: number;
@@ -128,9 +123,10 @@ export const OptionChainWidget: React.FC<OptionChainWidgetProps> = ({
   selectedExpiry,
   onSelectExpiry
 }) => {
-  const currentChain = data && data.length > 0 ? data : FULL_OPTION_CHAIN;
-  const currentSpotPrice = spotPrice ?? DEFAULT_SPOT_PRICE;
+  const currentSpotPrice = spotPrice && spotPrice > 0 ? spotPrice : DEFAULT_SPOT_PRICE;
   const currentAtmStrike = Math.round(currentSpotPrice / 50) * 50;
+  const fallbackChain = useMemo(() => buildDynamicOptionChain(currentSpotPrice), [currentSpotPrice]);
+  const currentChain = data && data.length > 0 ? data : fallbackChain;
 
   const [selectedStrike, setSelectedStrike] = useState<number>(currentAtmStrike);
   const [showSettings, setShowSettings] = useState<boolean>(false);
@@ -242,8 +238,9 @@ export const OptionChainWidget: React.FC<OptionChainWidgetProps> = ({
     return () => tableEl.removeEventListener('wheel', onWheel);
   }, [applyScrollOffset]);
 
-  // Center on ATM strike initially or when strike count changes
+  // Center on ATM strike initially or when strike count / ATM changes
   useEffect(() => {
+    setSelectedStrike(currentAtmStrike);
     if (tableContainerRef.current) {
       const atmEl = tableContainerRef.current.querySelector('[data-atm="true"]') as HTMLElement;
       if (atmEl) {
@@ -251,7 +248,7 @@ export const OptionChainWidget: React.FC<OptionChainWidgetProps> = ({
         tableContainerRef.current.scrollTop = Math.max(0, targetScrollTop);
       }
     }
-  }, [strikeCount]);
+  }, [strikeCount, currentAtmStrike]);
 
   const toggleColumn = (key: ColumnKey) => {
     setVisibleColumns((prev) => ({
