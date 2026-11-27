@@ -7,25 +7,19 @@ import {
 } from '@pm-vision/shared';
 import {
   WatchlistItem,
+  WatchlistSegment,
+  WATCHLIST_SEGMENT_OPTIONS,
   NIFTY_50_CONSTITUENTS,
   NIFTY_INDICES,
   ALL_SECTORS
 } from './watchlistData';
 
 export type WatchlistMode = 'docked' | 'fullscreen';
-
-export type WatchlistSegment =
-  | 'nifty50'
-  | 'fno_stocks'
-  | 'all_stocks'
-  | 'indices'
-  | 'index_futures'
-  | 'stock_futures'
-  | 'all_futures';
+export type { WatchlistSegment };
 
 export type WatchlistContractFilter = 'ALL' | FuturesMonthRole;
 
-interface EnrichedWatchlistItem extends WatchlistItem {
+export interface EnrichedWatchlistItem extends WatchlistItem {
   category?: InstrumentCategory;
   futuresRole?: FuturesMonthRole;
   expiryLabel?: string;
@@ -63,11 +57,173 @@ const ROLE_LABELS: Record<FuturesMonthRole, { title: string; short: string; colo
 
 const ROLE_ORDER: FuturesMonthRole[] = ['CONTINUOUS', 'CURRENT', 'NEXT', 'FAR'];
 
+export function buildWatchlistItemsForSegment(
+  segment: WatchlistSegment,
+  catalog: InstrumentCatalogResponse | null,
+  searchTerm: string = '',
+  selectedSector: string = 'All Sectors',
+  contractFilter: WatchlistContractFilter = 'ALL'
+): EnrichedWatchlistItem[] {
+  const q = searchTerm.trim().toLowerCase();
+
+  if (segment === 'major_indices') {
+    return NIFTY_INDICES.filter(
+      (item) =>
+        !q ||
+        item.symbol.toLowerCase().includes(q) ||
+        item.name.toLowerCase().includes(q)
+    ).map((item) => ({ ...item, category: 'INDEX' as InstrumentCategory }));
+  }
+
+  if (segment === 'nifty50') {
+    return NIFTY_50_CONSTITUENTS.filter((item) => {
+      const matchesSearch =
+        !q ||
+        item.symbol.toLowerCase().includes(q) ||
+        item.name.toLowerCase().includes(q);
+      const matchesSector =
+        selectedSector === 'All Sectors' || item.sector === selectedSector;
+      return matchesSearch && matchesSector;
+    }).map((item) => ({ ...item, category: 'EQUITY' as InstrumentCategory, isFnO: true }));
+  }
+
+  if (segment === 'indices') {
+    const merged: EnrichedWatchlistItem[] = [];
+    const seen = new Set<string>();
+    for (const idx of NIFTY_INDICES) {
+      seen.add(idx.symbol.toUpperCase());
+      merged.push({ ...idx, category: 'INDEX' });
+    }
+    if (catalog) {
+      for (const idx of catalog.indices) {
+        const key = idx.symbol.toUpperCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        merged.push({
+          symbol: idx.symbol,
+          name: idx.name,
+          sector: 'NSE Index',
+          basePrice: 0,
+          change: 0,
+          changePct: 0,
+          high: 0,
+          low: 0,
+          isIndex: true,
+          category: 'INDEX'
+        });
+      }
+    }
+    return merged.filter(
+      (item) =>
+        !q ||
+        item.symbol.toLowerCase().includes(q) ||
+        item.name.toLowerCase().includes(q)
+    );
+  }
+
+  if (segment === 'fno_stocks' || segment === 'all_stocks') {
+    const n50Map = new Map<string, WatchlistItem>();
+    for (const s of NIFTY_50_CONSTITUENTS) n50Map.set(s.symbol.toUpperCase(), s);
+
+    const sourceList = catalog?.equities || [];
+    let baseItems: EnrichedWatchlistItem[];
+    if (sourceList.length > 0) {
+      baseItems = sourceList
+        .filter((eq) => (segment === 'fno_stocks' ? Boolean(eq.isFnO) : true))
+        .map((eq) => {
+          const n50 = n50Map.get(eq.symbol.toUpperCase());
+          return {
+            symbol: eq.symbol,
+            name: n50 ? n50.name : eq.name,
+            sector: n50 ? n50.sector : eq.isFnO ? 'NSE F&O' : 'NSE Equity',
+            weight: n50?.weight,
+            basePrice: n50 ? n50.basePrice : 0,
+            change: n50 ? n50.change : 0,
+            changePct: n50 ? n50.changePct : 0,
+            high: n50 ? n50.high : 0,
+            low: n50 ? n50.low : 0,
+            category: 'EQUITY',
+            isFnO: eq.isFnO
+          };
+        });
+    } else {
+      baseItems = NIFTY_50_CONSTITUENTS.map((item) => ({
+        ...item,
+        category: 'EQUITY' as InstrumentCategory,
+        isFnO: true
+      }));
+    }
+
+    return baseItems
+      .filter(
+        (item) =>
+          !q ||
+          item.symbol.toLowerCase().includes(q) ||
+          item.name.toLowerCase().includes(q)
+      )
+      .sort((a, b) => {
+        if (q) {
+          const aStarts = a.symbol.toLowerCase().startsWith(q) ? 0 : 1;
+          const bStarts = b.symbol.toLowerCase().startsWith(q) ? 0 : 1;
+          if (aStarts !== bStarts) return aStarts - bStarts;
+        }
+        return a.symbol.localeCompare(b.symbol);
+      });
+  }
+
+  // Futures segments ('index_futures' | 'stock_futures' | 'all_futures')
+  const futuresList = catalog?.futures || [];
+  return futuresList
+    .filter((f) => {
+      if (segment === 'index_futures' && f.category !== 'INDEX_FUTURES') return false;
+      if (segment === 'stock_futures' && f.category !== 'STOCK_FUTURES') return false;
+      if (contractFilter !== 'ALL' && f.futuresRole !== contractFilter) return false;
+      if (!q) return true;
+      return (
+        f.symbol.toLowerCase().includes(q) ||
+        f.name.toLowerCase().includes(q) ||
+        f.underlying.toLowerCase().includes(q) ||
+        (f.expiryLabel && f.expiryLabel.toLowerCase().includes(q)) ||
+        (f.futuresRole && f.futuresRole.toLowerCase().includes(q))
+      );
+    })
+    .map((f) => ({
+      symbol: f.symbol,
+      name: f.name,
+      sector: f.category === 'INDEX_FUTURES' ? 'Index Futures' : 'Stock Futures',
+      basePrice: 0,
+      change: 0,
+      changePct: 0,
+      high: 0,
+      low: 0,
+      category: f.category,
+      futuresRole: f.futuresRole,
+      expiryLabel: f.expiryLabel,
+      lotSize: f.lotSize,
+      underlying: f.underlying,
+      isFnO: true
+    }))
+    .sort((a, b) => {
+      if (a.category !== b.category) {
+        return a.category === 'INDEX_FUTURES' ? -1 : 1;
+      }
+      const rA = a.futuresRole ? ROLE_ORDER.indexOf(a.futuresRole) : 9;
+      const rB = b.futuresRole ? ROLE_ORDER.indexOf(b.futuresRole) : 9;
+      if (rA !== rB) return rA - rB;
+      return a.symbol.localeCompare(b.symbol);
+    });
+}
+
 interface WatchlistDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   mode: WatchlistMode;
   onChangeMode: (mode: WatchlistMode) => void;
+  segment: WatchlistSegment;
+  onChangeSegment: (segment: WatchlistSegment) => void;
+  isSegmentMenuOpen?: boolean;
+  onToggleSegmentMenu?: (open?: boolean) => void;
+  onEngageWatchlist?: () => void;
   securities?: SecurityQuote[];
   catalog?: InstrumentCatalogResponse | null;
   activeSymbol?: string;
@@ -82,6 +238,11 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
   onClose,
   mode: _mode,
   onChangeMode: _onChangeMode,
+  segment,
+  onChangeSegment,
+  isSegmentMenuOpen = false,
+  onToggleSegmentMenu,
+  onEngageWatchlist,
   securities = [],
   catalog = null,
   activeSymbol = 'NIFTY 50',
@@ -90,16 +251,18 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
   onToggleHighlightSymbol,
   onRequestQuotes
 }) => {
-  const [segment, setSegment] = useState<WatchlistSegment>('nifty50');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSector, setSelectedSector] = useState('All Sectors');
   const [contractFilter, setContractFilter] = useState<WatchlistContractFilter>('ALL');
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [displayLimit, setDisplayLimit] = useState<number>(150);
+  const [dropdownHighlightIdx, setDropdownHighlightIdx] = useState<number>(() =>
+    Math.max(0, WATCHLIST_SEGMENT_OPTIONS.findIndex((o) => o.id === segment))
+  );
 
   const lastRequestedRef = useRef<Map<string, number>>(new Map());
+  const dropdownContainerRef = useRef<HTMLDivElement>(null);
 
-  // Context menu for right-clicking any watchlist item
   const [contextMenu, setContextMenu] = useState<{
     visible: boolean;
     x: number;
@@ -112,21 +275,76 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
     item: null
   });
 
-  // Close context menu on outside click
   useEffect(() => {
-    const handleCloseMenu = () => {
+    const handleCloseMenu = (e: MouseEvent) => {
       setContextMenu((prev) => (prev.visible ? { ...prev, visible: false } : prev));
+      if (
+        isSegmentMenuOpen &&
+        dropdownContainerRef.current &&
+        !dropdownContainerRef.current.contains(e.target as Node)
+      ) {
+        onToggleSegmentMenu?.(false);
+      }
     };
     window.addEventListener('click', handleCloseMenu);
     return () => window.removeEventListener('click', handleCloseMenu);
-  }, []);
+  }, [isSegmentMenuOpen, onToggleSegmentMenu]);
 
-  // Reset pagination window when filters change
+  // Sync dropdown highlight cursor when opened with Alt+Q
+  useEffect(() => {
+    if (isSegmentMenuOpen) {
+      const idx = WATCHLIST_SEGMENT_OPTIONS.findIndex((o) => o.id === segment);
+      setDropdownHighlightIdx(idx >= 0 ? idx : 0);
+    }
+  }, [isSegmentMenuOpen, segment]);
+
+  // Handle Up/Down/Enter/Escape while Watchlist dropdown (Alt+Q) is open
+  useEffect(() => {
+    if (!isOpen || !isSegmentMenuOpen) return;
+
+    const handleDropdownKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey && e.key.toLowerCase() === 'q') {
+        e.preventDefault();
+        e.stopPropagation();
+        onToggleSegmentMenu?.(false);
+        return;
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        e.stopPropagation();
+        setDropdownHighlightIdx((prev) =>
+          prev < WATCHLIST_SEGMENT_OPTIONS.length - 1 ? prev + 1 : 0
+        );
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        e.stopPropagation();
+        setDropdownHighlightIdx((prev) =>
+          prev > 0 ? prev - 1 : WATCHLIST_SEGMENT_OPTIONS.length - 1
+        );
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        const opt = WATCHLIST_SEGMENT_OPTIONS[dropdownHighlightIdx];
+        if (opt) {
+          onChangeSegment(opt.id);
+          onToggleSegmentMenu?.(false);
+          onEngageWatchlist?.();
+        }
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        onToggleSegmentMenu?.(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleDropdownKeyDown, true);
+    return () => window.removeEventListener('keydown', handleDropdownKeyDown, true);
+  }, [isOpen, isSegmentMenuOpen, dropdownHighlightIdx, onChangeSegment, onToggleSegmentMenu, onEngageWatchlist]);
+
   useEffect(() => {
     setDisplayLimit(150);
   }, [segment, searchTerm, selectedSector, contractFilter]);
 
-  // Sync quotes with live securities stream from WebSocket + on-demand fetches
   const securityMap = useMemo(() => {
     const map = new Map<string, SecurityQuote>();
     for (const s of securities) {
@@ -138,155 +356,15 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
   const isFuturesSegment =
     segment === 'index_futures' || segment === 'stock_futures' || segment === 'all_futures';
 
-  // Build active list based on selected Watchlist Segment
-  const activeCatalogList: EnrichedWatchlistItem[] = useMemo(() => {
-    const q = searchTerm.trim().toLowerCase();
+  const activeCatalogList = useMemo(
+    () => buildWatchlistItemsForSegment(segment, catalog, searchTerm, selectedSector, contractFilter),
+    [segment, catalog, searchTerm, selectedSector, contractFilter]
+  );
 
-    if (segment === 'nifty50') {
-      return NIFTY_50_CONSTITUENTS.filter((item) => {
-        const matchesSearch =
-          !q ||
-          item.symbol.toLowerCase().includes(q) ||
-          item.name.toLowerCase().includes(q);
-        const matchesSector =
-          selectedSector === 'All Sectors' || item.sector === selectedSector;
-        return matchesSearch && matchesSector;
-      }).map((item) => ({ ...item, category: 'EQUITY' as InstrumentCategory, isFnO: true }));
-    }
-
-    if (segment === 'indices') {
-      const merged: EnrichedWatchlistItem[] = [];
-      const seen = new Set<string>();
-      for (const idx of NIFTY_INDICES) {
-        seen.add(idx.symbol.toUpperCase());
-        merged.push({ ...idx, category: 'INDEX' });
-      }
-      if (catalog) {
-        for (const idx of catalog.indices) {
-          const key = idx.symbol.toUpperCase();
-          if (seen.has(key)) continue;
-          seen.add(key);
-          merged.push({
-            symbol: idx.symbol,
-            name: idx.name,
-            sector: 'NSE Index',
-            basePrice: 0,
-            change: 0,
-            changePct: 0,
-            high: 0,
-            low: 0,
-            isIndex: true,
-            category: 'INDEX'
-          });
-        }
-      }
-      return merged.filter(
-        (item) =>
-          !q ||
-          item.symbol.toLowerCase().includes(q) ||
-          item.name.toLowerCase().includes(q)
-      );
-    }
-
-    if (segment === 'fno_stocks' || segment === 'all_stocks') {
-      const n50Map = new Map<string, WatchlistItem>();
-      for (const s of NIFTY_50_CONSTITUENTS) n50Map.set(s.symbol.toUpperCase(), s);
-
-      const sourceList = catalog?.equities || [];
-      let baseItems: EnrichedWatchlistItem[];
-      if (sourceList.length > 0) {
-        baseItems = sourceList
-          .filter((eq) => (segment === 'fno_stocks' ? Boolean(eq.isFnO) : true))
-          .map((eq) => {
-            const n50 = n50Map.get(eq.symbol.toUpperCase());
-            return {
-              symbol: eq.symbol,
-              name: n50 ? n50.name : eq.name,
-              sector: n50 ? n50.sector : eq.isFnO ? 'NSE F&O' : 'NSE Equity',
-              weight: n50?.weight,
-              basePrice: n50 ? n50.basePrice : 0,
-              change: n50 ? n50.change : 0,
-              changePct: n50 ? n50.changePct : 0,
-              high: n50 ? n50.high : 0,
-              low: n50 ? n50.low : 0,
-              category: 'EQUITY',
-              isFnO: eq.isFnO
-            };
-          });
-      } else {
-        baseItems = NIFTY_50_CONSTITUENTS.map((item) => ({
-          ...item,
-          category: 'EQUITY' as InstrumentCategory,
-          isFnO: true
-        }));
-      }
-
-      return baseItems
-        .filter(
-          (item) =>
-            !q ||
-            item.symbol.toLowerCase().includes(q) ||
-            item.name.toLowerCase().includes(q)
-        )
-        .sort((a, b) => {
-          if (q) {
-            const aStarts = a.symbol.toLowerCase().startsWith(q) ? 0 : 1;
-            const bStarts = b.symbol.toLowerCase().startsWith(q) ? 0 : 1;
-            if (aStarts !== bStarts) return aStarts - bStarts;
-          }
-          return a.symbol.localeCompare(b.symbol);
-        });
-    }
-
-    // Futures segments ('index_futures' | 'stock_futures' | 'all_futures')
-    const futuresList = catalog?.futures || [];
-    return futuresList
-      .filter((f) => {
-        if (segment === 'index_futures' && f.category !== 'INDEX_FUTURES') return false;
-        if (segment === 'stock_futures' && f.category !== 'STOCK_FUTURES') return false;
-        if (contractFilter !== 'ALL' && f.futuresRole !== contractFilter) return false;
-        if (!q) return true;
-        return (
-          f.symbol.toLowerCase().includes(q) ||
-          f.name.toLowerCase().includes(q) ||
-          f.underlying.toLowerCase().includes(q) ||
-          (f.expiryLabel && f.expiryLabel.toLowerCase().includes(q)) ||
-          (f.futuresRole && f.futuresRole.toLowerCase().includes(q))
-        );
-      })
-      .map((f) => ({
-        symbol: f.symbol,
-        name: f.name,
-        sector: f.category === 'INDEX_FUTURES' ? 'Index Futures' : 'Stock Futures',
-        basePrice: 0,
-        change: 0,
-        changePct: 0,
-        high: 0,
-        low: 0,
-        category: f.category,
-        futuresRole: f.futuresRole,
-        expiryLabel: f.expiryLabel,
-        lotSize: f.lotSize,
-        underlying: f.underlying,
-        isFnO: true
-      }))
-      .sort((a, b) => {
-        if (a.category !== b.category) {
-          return a.category === 'INDEX_FUTURES' ? -1 : 1;
-        }
-        const rA = a.futuresRole ? ROLE_ORDER.indexOf(a.futuresRole) : 9;
-        const rB = b.futuresRole ? ROLE_ORDER.indexOf(b.futuresRole) : 9;
-        if (rA !== rB) return rA - rB;
-        return a.symbol.localeCompare(b.symbol);
-      });
-  }, [segment, searchTerm, selectedSector, contractFilter, catalog]);
-
-  // Visible slice for smooth rendering of thousands of NSE instruments
   const visibleItems = useMemo(() => {
     return activeCatalogList.slice(0, displayLimit);
   }, [activeCatalogList, displayLimit]);
 
-  // Group by Sector (for NIFTY 50)
   const groupedNifty50 = useMemo(() => {
     if (segment !== 'nifty50') return new Map<string, EnrichedWatchlistItem[]>();
     const map = new Map<string, EnrichedWatchlistItem[]>();
@@ -299,7 +377,6 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
     return map;
   }, [segment, visibleItems]);
 
-  // Group Futures by Role (Continuous / Current / Next / Far) when viewing All Contracts
   const groupedFuturesByRole = useMemo(() => {
     if (!isFuturesSegment || contractFilter !== 'ALL') {
       return new Map<FuturesMonthRole, EnrichedWatchlistItem[]>();
@@ -318,7 +395,7 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
     return map;
   }, [isFuturesSegment, contractFilter, visibleItems]);
 
-  // Hydrate live quotes on demand for currently visible instruments (with 15s per-symbol cooldown)
+  // Hydrate live quotes on demand for currently visible instruments
   useEffect(() => {
     if (!isOpen || !onRequestQuotes || visibleItems.length === 0) return;
 
@@ -382,6 +459,27 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
     });
   };
 
+  const getOptionLabel = (id: WatchlistSegment): string => {
+    switch (id) {
+      case 'major_indices':
+        return `NSE Major Indices (${NIFTY_INDICES.length})`;
+      case 'nifty50':
+        return 'NIFTY 50 Constituents (50)';
+      case 'fno_stocks':
+        return `NSE F&O Stocks (${catalog ? catalog.fnOUnderlyings.length : '224'})`;
+      case 'all_stocks':
+        return `All NSE Stocks (${catalog ? catalog.equities.length.toLocaleString() : '50+'})`;
+      case 'indices':
+        return `All NSE Indices (${catalog ? catalog.indices.length : NIFTY_INDICES.length})`;
+      case 'index_futures':
+        return 'Index Futures (NIFTY, BANKNIFTY...)';
+      case 'stock_futures':
+        return 'Stock Futures (F&O Contracts)';
+      case 'all_futures':
+        return `All Futures Contracts (${catalog ? catalog.futures.length.toLocaleString() : 'F&O'})`;
+    }
+  };
+
   const renderRow = (item: EnrichedWatchlistItem) => {
     const { ltp, change, changePct } = getItemLtp(item);
     const isPositive = change >= 0;
@@ -392,7 +490,10 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
     return (
       <div
         key={item.symbol}
-        onClick={() => onSelectSymbol && onSelectSymbol(item.symbol)}
+        onClick={() => {
+          onEngageWatchlist?.();
+          onSelectSymbol?.(item.symbol);
+        }}
         onContextMenu={(e) => handleItemContextMenu(e, item)}
         title="Click to open chart · Right click for options"
         style={{
@@ -400,7 +501,7 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          backgroundColor: isSelected ? 'rgba(95, 122, 154, 0.12)' : 'transparent',
+          backgroundColor: isSelected ? 'rgba(95, 122, 154, 0.14)' : 'transparent',
           borderBottom: '1px solid #121212',
           cursor: 'pointer',
           transition: 'background-color 0.12s ease'
@@ -507,7 +608,7 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
         </div>
 
         <div style={{ textAlign: 'right', flexShrink: 0 }}>
-          <div style={{ fontSize: '0.73rem', fontWeight: 600, color: '#ffffff', fontFamily: 'monospace' }}>
+          <div style={{ fontSize: '0.73rem', fontWeight: 600, color: '#ffffff', fontFamily: 'Quicksand, sans-serif' }}>
             {ltp > 0 ? ltp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
           </div>
           {ltp > 0 ? (
@@ -516,14 +617,14 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
                 fontSize: '0.63rem',
                 fontWeight: 600,
                 color: isPositive ? '#10b981' : '#ef4444',
-                fontFamily: 'monospace'
+                fontFamily: 'Quicksand, sans-serif'
               }}
             >
               {isPositive ? '+' : ''}{change.toFixed(2)} ({isPositive ? '+' : ''}{changePct.toFixed(2)}%)
             </div>
           ) : (
             <div style={{ fontSize: '0.58rem', color: '#525252' }}>
-              {isFuturesSegment ? 'FYERS FUT' : 'NSE'}
+              {isFuturesSegment ? 'FUT' : 'NSE'}
             </div>
           )}
         </div>
@@ -533,6 +634,7 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
 
   return (
     <div
+      onMouseDown={() => onEngageWatchlist?.()}
       style={{
         backgroundColor: '#0a0a0a',
         color: '#e5e7eb',
@@ -577,7 +679,7 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
 
         <button
           onClick={onClose}
-          title="Close Watchlist"
+          title="Close Watchlist (Alt+W)"
           style={{
             padding: '3px 7px',
             fontSize: '0.72rem',
@@ -596,51 +698,105 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
         </button>
       </div>
 
-      {/* Market Segment Selector Dropdown */}
+      {/* Keyboard-Accessible Watchlist Segment Dropdown (Alt+Q + Up/Down + Enter) */}
       <div
+        ref={dropdownContainerRef}
+        onClick={(e) => e.stopPropagation()}
         style={{
           padding: '7px 12px',
           borderBottom: '1px solid #1a1a1a',
           backgroundColor: '#080808',
-          flexShrink: 0
+          flexShrink: 0,
+          position: 'relative'
         }}
       >
-        <select
-          value={segment}
-          onChange={(e) => setSegment(e.target.value as WatchlistSegment)}
+        <button
+          type="button"
+          onClick={() => {
+            onEngageWatchlist?.();
+            onToggleSegmentMenu?.(!isSegmentMenuOpen);
+          }}
+          title="Select Watchlist (Alt+Q)"
           style={{
             width: '100%',
             backgroundColor: '#121212',
             color: '#ffffff',
-            border: '1px solid #5F7A9A',
+            border: `1px solid ${isSegmentMenuOpen ? '#93c5fd' : '#5F7A9A'}`,
             borderRadius: '4px',
-            padding: '5px 8px',
-            fontSize: '0.74rem',
+            padding: '5px 9px',
+            fontSize: '0.73rem',
             fontWeight: 600,
-            outline: 'none',
             cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            textAlign: 'left',
             fontFamily: 'Quicksand, sans-serif'
           }}
         >
-          <option value="nifty50">NIFTY 50 Constituents (50)</option>
-          <option value="fno_stocks">
-            NSE F&amp;O Stocks ({catalog ? catalog.fnOUnderlyings.length : '224'})
-          </option>
-          <option value="all_stocks">
-            All NSE Stocks ({catalog ? catalog.equities.length.toLocaleString() : '50+'})
-          </option>
-          <option value="indices">
-            NSE Indices ({catalog ? catalog.indices.length : NIFTY_INDICES.length})
-          </option>
-          <option value="index_futures">Index Futures (NIFTY, BANKNIFTY, FINNIFTY...)</option>
-          <option value="stock_futures">Stock Futures (All NSE F&amp;O Contracts)</option>
-          <option value="all_futures">
-            All Futures Contracts ({catalog ? catalog.futures.length.toLocaleString() : 'F&O'})
-          </option>
-        </select>
+          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {getOptionLabel(segment)}
+          </span>
+          <span style={{ fontSize: '0.62rem', color: '#9ca3af', marginLeft: '6px' }}>
+            {isSegmentMenuOpen ? '▲' : '▼'}
+          </span>
+        </button>
+
+        {isSegmentMenuOpen && (
+          <div
+            role="listbox"
+            style={{
+              position: 'absolute',
+              top: 'calc(100% - 2px)',
+              left: '12px',
+              right: '12px',
+              backgroundColor: '#0d0d0d',
+              border: '1px solid #5F7A9A',
+              borderRadius: '4px',
+              boxShadow: '0 12px 28px rgba(0, 0, 0, 0.96)',
+              zIndex: 80,
+              overflow: 'hidden'
+            }}
+          >
+            {WATCHLIST_SEGMENT_OPTIONS.map((opt, idx) => {
+              const isHighlighted = idx === dropdownHighlightIdx;
+              const isCurrent = opt.id === segment;
+              return (
+                <div
+                  key={opt.id}
+                  onMouseEnter={() => setDropdownHighlightIdx(idx)}
+                  onClick={() => {
+                    onChangeSegment(opt.id);
+                    onToggleSegmentMenu?.(false);
+                    onEngageWatchlist?.();
+                  }}
+                  style={{
+                    padding: '6px 10px',
+                    fontSize: '0.72rem',
+                    fontWeight: isCurrent || isHighlighted ? 700 : 500,
+                    color: isHighlighted ? '#ffffff' : isCurrent ? '#93c5fd' : '#d4d4d4',
+                    backgroundColor: isHighlighted
+                      ? 'rgba(95, 122, 154, 0.28)'
+                      : isCurrent
+                      ? 'rgba(95, 122, 154, 0.12)'
+                      : 'transparent',
+                    borderBottom: '1px solid #161616',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}
+                >
+                  <span>{getOptionLabel(opt.id)}</span>
+                  {isCurrent && <span style={{ fontSize: '0.60rem', color: '#5F7A9A' }}>Active</span>}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      {/* Search Bar & Secondary Filter (Sector for Nifty 50 / Contract Role for Futures) */}
+      {/* Search Bar & Secondary Filter */}
       <div
         style={{
           padding: '7px 12px',
@@ -973,7 +1129,7 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
         <span>
           Showing {visibleItems.length.toLocaleString()} of {activeCatalogList.length.toLocaleString()}
         </span>
-        <span style={{ color: '#5F7A9A' }}>Right-click for options</span>
+        <span style={{ color: '#5F7A9A' }}>Alt+Q Switch · ↑↓ Step</span>
       </div>
     </div>
   );

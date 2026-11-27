@@ -65,7 +65,7 @@ export const StatusCard: React.FC<StatusCardProps> = ({
           {Object.entries(details).map(([key, val]) => (
             <div key={key} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
               <span style={{ color: '#94a3b8' }}>{key}</span>
-              <span style={{ color: '#cbd5e1', fontFamily: 'monospace' }}>{val}</span>
+              <span style={{ color: '#cbd5e1', fontFamily: 'Quicksand, sans-serif' }}>{val}</span>
             </div>
           ))}
         </div>

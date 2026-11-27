@@ -68,8 +68,15 @@ export class PublicMarketDataProvider {
   }
 
   private getResolutionSpec(resolution: string): ResolutionSpec {
-    const resClean = (resolution || '15m').toLowerCase().trim();
+    const rawTrimmed = (resolution || '15m').trim();
+    const resClean = rawTrimmed.toLowerCase();
 
+    if (rawTrimmed === '1M' || rawTrimmed === 'M' || resClean === '1mo') {
+      return { yahooInterval: '1mo', range: '10y', aggregateSeconds: 0, isIntraday: false };
+    }
+    if (resClean === '1w' || resClean === 'w' || resClean === '1wk') {
+      return { yahooInterval: '1wk', range: '5y', aggregateSeconds: 0, isIntraday: false };
+    }
     if (resClean === '1m' || resClean === '1') {
       return { yahooInterval: '1m', range: '5d', aggregateSeconds: 0, isIntraday: true };
     }
@@ -99,6 +106,9 @@ export class PublicMarketDataProvider {
     }
     if (resClean === '4h' || resClean === '240') {
       return { yahooInterval: '60m', range: '3mo', aggregateSeconds: 14400, isIntraday: true };
+    }
+    if (resClean === '1d' || resClean === 'd') {
+      return { yahooInterval: '1d', range: '1y', aggregateSeconds: 0, isIntraday: false };
     }
     return { yahooInterval: '1d', range: '1y', aggregateSeconds: 0, isIntraday: false };
   }

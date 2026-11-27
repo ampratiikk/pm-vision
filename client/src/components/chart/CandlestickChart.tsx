@@ -3,7 +3,8 @@ import {
   useEffect,
   useRef,
   useImperativeHandle,
-  forwardRef
+  forwardRef,
+  useMemo
 } from 'react';
 import {
   createChart,
@@ -25,18 +26,19 @@ import {
   Time,
   IPriceLine
 } from 'lightweight-charts';
+import { isIndianMarketOpen } from '@pm-vision/shared';
 import { CandlestickChartProps, ChartImperativeHandle, IndicatorConfig } from './types';
 import {
   computeOpeningRangeBreakout,
   computeVWAP,
   computeEMA,
   computeSMA,
-  computeVolumeSeries
+  computeRSI,
+  computeADX,
+  computeVolumeSeries,
+  ORSessionSegment
 } from './indicators';
 
-/**
- * Format numerical prices with comma separation (Indian format)
- */
 function formatPrice(val: number): string {
   return val.toLocaleString('en-IN', {
     minimumFractionDigits: 2,
@@ -49,8 +51,8 @@ interface OHLCInfo {
   high: number;
   low: number;
   close: number;
-  changeVal: number; // compared to previous candle close
-  changePct: number; // compared to previous candle close
+  changeVal: number;
+  changePct: number;
 }
 
 function parseToSeconds(val: any): number {
@@ -122,9 +124,6 @@ function computeOHLCInfo(list: CandlestickData<Time>[], targetIdx: number): OHLC
 type CanvasTarget = Parameters<IPrimitivePaneRenderer['draw']>[0];
 type BitmapCoordinateScope = Parameters<Parameters<CanvasTarget['useBitmapCoordinateSpace']>[0]>[0];
 
-/**
- * Utility to draw a crisp rounded rectangle on Canvas 2D
- */
 function drawRoundedRect(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -152,12 +151,7 @@ function drawRoundedRect(
 }
 
 /**
- * Custom series primitive to render the price box on the price axis with:
- * - Razor-sharp, unblurred primary color border (#5F7A9A) via device bitmap pixel alignment
- * - White inside background if price is positive (close >= open)
- * - Black inside background if price is negative (close < open)
- * - Contrasting text color (black on white, white on black)
- * - Strict Quicksand typography
+ * Custom price box primitive on right Y-axis in Quicksand font
  */
 class PriceBoxPrimitive implements ISeriesPrimitive<Time> {
   private _attachedParams: SeriesAttachedParameter<Time> | null = null;
@@ -175,7 +169,6 @@ class PriceBoxPrimitive implements ISeriesPrimitive<Time> {
         const y = this._attachedParams.series.priceToCoordinate(this._price);
         if (y === null) return;
 
-        // Draw in 1:1 hardware device bitmap coordinates to completely avoid subpixel blurriness
         target.useBitmapCoordinateSpace((scope: BitmapCoordinateScope) => {
           const { context: ctx, horizontalPixelRatio: hRatio, verticalPixelRatio: vRatio, bitmapSize } = scope;
 
@@ -191,13 +184,10 @@ class PriceBoxPrimitive implements ISeriesPrimitive<Time> {
           const radius = Math.round(3 * hRatio);
 
           ctx.save();
-
-          // 1. Draw outer rounded rect with primary accent color (#5F7A9A)
           drawRoundedRect(ctx, x, top, boxWidth, boxHeight, radius);
           ctx.fillStyle = '#5F7A9A';
           ctx.fill();
 
-          // 2. Draw inner rounded rect with inside color inset by exact borderWidth (100% crisp, zero blur)
           const innerRadius = Math.max(0, radius - borderWidth);
           drawRoundedRect(
             ctx,
@@ -210,7 +200,6 @@ class PriceBoxPrimitive implements ISeriesPrimitive<Time> {
           ctx.fillStyle = this._isPositive ? '#FFFFFF' : '#000000';
           ctx.fill();
 
-          // 3. Draw text in crisp bitmap font pixels
           const text = this._price.toFixed(2);
           const fontSize = Math.round(11 * vRatio);
           ctx.font = `600 ${fontSize}px Quicksand, sans-serif`;
@@ -218,7 +207,6 @@ class PriceBoxPrimitive implements ISeriesPrimitive<Time> {
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.fillText(text, x + boxWidth / 2, yCenter);
-
           ctx.restore();
         });
       }
@@ -240,9 +228,7 @@ class PriceBoxPrimitive implements ISeriesPrimitive<Time> {
     this._attachedParams = null;
   }
 
-  updateAllViews() {
-    // Redraw triggered by Lightweight Charts on scroll/zoom/viewport change
-  }
+  updateAllViews() {}
 
   priceAxisPaneViews(): readonly IPrimitivePaneView[] {
     return this._paneViews;
@@ -256,9 +242,121 @@ class PriceBoxPrimitive implements ISeriesPrimitive<Time> {
 }
 
 /**
- * Reset chart view: spacious zoomed-in focus on recent candles with generous right-side
- * breathing room before the Y-axis and auto-scaled vertical margins.
+ * Custom Canvas primitive drawing completely independent, unconnected per-session OR High/Low/Mid segments.
+ * Ensures previous trading days' lines never staircase/connect into subsequent days.
  */
+class OpeningRangePrimitive implements ISeriesPrimitive<Time> {
+  private _attachedParams: SeriesAttachedParameter<Time> | null = null;
+  private _sessions: ORSessionSegment[] = [];
+  private _highColor = '#38bdf8';
+  private _lowColor = '#38bdf8';
+  private _midColor = 'rgba(56, 189, 248, 0.45)';
+  private _showMid = false;
+  private _lineWidth = 2;
+  private _paneViews: readonly IPrimitivePaneView[];
+
+  constructor() {
+    const renderer: IPrimitivePaneRenderer = {
+      draw: (target: CanvasTarget) => {
+        if (!this._attachedParams || this._sessions.length === 0) return;
+        const { chart, series } = this._attachedParams;
+        const timeScale = chart.timeScale();
+
+        target.useBitmapCoordinateSpace((scope: BitmapCoordinateScope) => {
+          const { context: ctx, horizontalPixelRatio: hRatio, verticalPixelRatio: vRatio } = scope;
+          ctx.save();
+
+          for (const seg of this._sessions) {
+            const x1 = timeScale.timeToCoordinate(seg.startTime);
+            const x2 = timeScale.timeToCoordinate(seg.endTime);
+            const yHigh = series.priceToCoordinate(seg.high);
+            const yLow = series.priceToCoordinate(seg.low);
+            if (x1 === null || x2 === null || yHigh === null || yLow === null) continue;
+
+            const px1 = Math.round(x1 * hRatio);
+            const px2 = Math.max(px1 + Math.round(4 * hRatio), Math.round(x2 * hRatio));
+            const lw = Math.max(1, Math.round(this._lineWidth * vRatio));
+
+            // OR High horizontal segment
+            ctx.beginPath();
+            ctx.strokeStyle = this._highColor;
+            ctx.lineWidth = lw;
+            ctx.setLineDash([]);
+            const pyHigh = Math.round(yHigh * vRatio) + (lw % 2 === 1 ? 0.5 : 0);
+            ctx.moveTo(px1, pyHigh);
+            ctx.lineTo(px2, pyHigh);
+            ctx.stroke();
+
+            // OR Low horizontal segment
+            ctx.beginPath();
+            ctx.strokeStyle = this._lowColor;
+            ctx.lineWidth = lw;
+            const pyLow = Math.round(yLow * vRatio) + (lw % 2 === 1 ? 0.5 : 0);
+            ctx.moveTo(px1, pyLow);
+            ctx.lineTo(px2, pyLow);
+            ctx.stroke();
+
+            // Optional OR Midpoint dotted segment
+            if (this._showMid) {
+              const yMid = series.priceToCoordinate(seg.mid);
+              if (yMid !== null) {
+                ctx.beginPath();
+                ctx.strokeStyle = this._midColor;
+                ctx.lineWidth = Math.max(1, Math.round(1 * vRatio));
+                ctx.setLineDash([Math.round(4 * hRatio), Math.round(4 * hRatio)]);
+                const pyMid = Math.round(yMid * vRatio);
+                ctx.moveTo(px1, pyMid);
+                ctx.lineTo(px2, pyMid);
+                ctx.stroke();
+              }
+            }
+          }
+
+          ctx.restore();
+        });
+      }
+    };
+
+    this._paneViews = [
+      {
+        zOrder: () => 'normal',
+        renderer: () => renderer
+      }
+    ];
+  }
+
+  attached(param: SeriesAttachedParameter<Time>) {
+    this._attachedParams = param;
+  }
+
+  detached() {
+    this._attachedParams = null;
+  }
+
+  updateAllViews() {}
+
+  paneViews(): readonly IPrimitivePaneView[] {
+    return this._paneViews;
+  }
+
+  update(
+    sessions: ORSessionSegment[],
+    highColor: string,
+    lowColor: string,
+    midColor: string,
+    showMid: boolean,
+    lineWidth: number
+  ) {
+    this._sessions = sessions;
+    this._highColor = highColor;
+    this._lowColor = lowColor;
+    this._midColor = midColor;
+    this._showMid = showMid;
+    this._lineWidth = lineWidth;
+    this._attachedParams?.requestUpdate();
+  }
+}
+
 function resetChartView(chartApi: IChartApi | null) {
   if (!chartApi) return;
   try {
@@ -280,23 +378,98 @@ function resetChartView(chartApi: IChartApi | null) {
   }
 }
 
-/**
- * Helper to get interval length in seconds for standard chart timeframes
- */
 function getTimeframeSeconds(tf: string): number {
-  const clean = (tf || '15m').toLowerCase().trim();
-  if (clean === '1m' || clean === '1') return 60;
-  if (clean === '2m' || clean === '2') return 120;
-  if (clean === '3m' || clean === '3') return 180;
-  if (clean === '5m' || clean === '5') return 300;
-  if (clean === '10m' || clean === '10') return 600;
-  if (clean === '15m' || clean === '15') return 900;
-  if (clean === '30m' || clean === '30') return 1800;
-  if (clean === '1h' || clean === '60') return 3600;
-  if (clean === '2h' || clean === '120') return 7200;
-  if (clean === '4h' || clean === '240') return 14400;
+  const trimmed = (tf || '5m').trim();
+  if (trimmed === '1M' || trimmed === 'M') return 30 * 86400;
+  const clean = trimmed.toLowerCase();
+  if (clean === '1w' || clean === 'w') return 7 * 86400;
   if (clean === '1d' || clean === 'd') return 86400;
-  return 900;
+  if (clean === '4h' || clean === '240') return 14400;
+  if (clean === '2h' || clean === '120') return 7200;
+  if (clean === '1h' || clean === '60') return 3600;
+  if (clean === '30m' || clean === '30') return 1800;
+  if (clean === '15m' || clean === '15') return 900;
+  if (clean === '10m' || clean === '10') return 600;
+  if (clean === '5m' || clean === '5') return 300;
+  if (clean === '3m' || clean === '3') return 180;
+  if (clean === '2m' || clean === '2') return 120;
+  if (clean === '1m' || clean === '1') return 60;
+  const parsedMin = parseInt(clean.replace(/m$/, ''), 10);
+  if (parsedMin > 0) return parsedMin * 60;
+  return 300;
+}
+
+function formatDurationLabel(mins: number): string {
+  if (mins >= 60 && mins % 60 === 0) return `${mins / 60}H`;
+  return `${mins}m`;
+}
+
+function formatCountdown(timeframe: string, lastCandleTimeSec?: number): string {
+  const now = new Date();
+  if (!isIndianMarketOpen(now)) {
+    return '00:00';
+  }
+  const trimmed = (timeframe || '5m').trim();
+  const istNowSec = Math.floor(now.getTime() / 1000) + 19800;
+
+  if (trimmed === '1M' || trimmed === 'M') {
+    const dIst = new Date(istNowSec * 1000);
+    const nextMonth = Date.UTC(dIst.getUTCFullYear(), dIst.getUTCMonth() + 1, 1, 9, 15, 0) / 1000;
+    const rem = Math.max(0, nextMonth - istNowSec);
+    const days = Math.floor(rem / 86400);
+    const hrs = Math.floor((rem % 86400) / 3600);
+    return `${days}d ${String(hrs).padStart(2, '0')}h`;
+  }
+
+  if (trimmed.toLowerCase() === '1w') {
+    const dIst = new Date(istNowSec * 1000);
+    const day = dIst.getUTCDay(); // 0=Sun..5=Fri
+    const daysUntilFri = (5 - day + 7) % 7;
+    const dayStart = Math.floor(istNowSec / 86400) * 86400;
+    const friClose = dayStart + daysUntilFri * 86400 + 15 * 3600 + 30 * 60;
+    const rem = Math.max(0, friClose - istNowSec);
+    const d = Math.floor(rem / 86400);
+    const h = Math.floor((rem % 86400) / 3600);
+    const m = Math.floor((rem % 3600) / 60);
+    return d > 0 ? `${d}d ${String(h).padStart(2, '0')}h` : `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  }
+
+  if (trimmed.toLowerCase() === '1d') {
+    const dayStart = Math.floor(istNowSec / 86400) * 86400;
+    const closeSec = dayStart + 15 * 3600 + 30 * 60;
+    const rem = Math.max(0, closeSec - istNowSec);
+    const h = Math.floor(rem / 3600);
+    const m = Math.floor((rem % 3600) / 60);
+    const s = rem % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+
+  const intervalSec = getTimeframeSeconds(trimmed);
+  let remainingSec = 0;
+
+  if (
+    lastCandleTimeSec &&
+    lastCandleTimeSec > 0 &&
+    istNowSec >= lastCandleTimeSec &&
+    istNowSec - lastCandleTimeSec < intervalSec
+  ) {
+    remainingSec = lastCandleTimeSec + intervalSec - istNowSec;
+  } else {
+    // Anchor to NSE 09:15 IST session start (33300s from midnight)
+    const dayStart = Math.floor(istNowSec / 86400) * 86400;
+    const anchor = dayStart + 9 * 3600 + 15 * 60;
+    const elapsed = Math.max(0, istNowSec - anchor);
+    remainingSec = intervalSec - (elapsed % intervalSec);
+    if (remainingSec === intervalSec) remainingSec = 0;
+  }
+
+  const hrs = Math.floor(remainingSec / 3600);
+  const mins = Math.floor((remainingSec % 3600) / 60);
+  const secs = remainingSec % 60;
+  if (hrs > 0) {
+    return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  }
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 }
 
 export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickChartProps>(
@@ -312,8 +485,10 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
       onChartReady,
       onContextMenu,
       onOpenIndicatorSettings,
+      onToggleIndicatorVisibility,
+      onBarUpdate,
       casPrice,
-      timeframe = '15m'
+      timeframe = '5m'
     },
     ref
   ) => {
@@ -321,21 +496,41 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
     const chartRef = useRef<IChartApi | null>(null);
     const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
     const priceBoxRef = useRef<PriceBoxPrimitive | null>(null);
+    const orPrimitiveRef = useRef<OpeningRangePrimitive | null>(null);
     const indicatorSeriesMapRef = useRef<Map<string, ISeriesApi<any>[]>>(new Map());
     const casPriceLineRef = useRef<IPriceLine | null>(null);
+
     const casPriceRef = useRef<number | undefined>(casPrice);
     casPriceRef.current = casPrice;
     const timeframeRef = useRef<string>(timeframe);
     timeframeRef.current = timeframe;
+    const indicatorsRef = useRef<IndicatorConfig[]>(indicators);
+    indicatorsRef.current = indicators;
+    const onBarUpdateRef = useRef(onBarUpdate);
+    onBarUpdateRef.current = onBarUpdate;
 
-    // Keep data array in ref for fast lookup during crosshair moves
     const currentDataRef = useRef<CandlestickData<Time>[]>(data || []);
 
-    // OHLC & change compared to previous candle
     const [ohlcInfo, setOhlcInfo] = useState<OHLCInfo | null>(() => {
       const list = data || [];
       return computeOHLCInfo(list, list.length - 1);
     });
+
+    const [countdownText, setCountdownText] = useState<string>(() =>
+      formatCountdown(timeframe, data && data.length > 0 ? Number(data[data.length - 1].time) : undefined)
+    );
+    const [cornerDims, setCornerDims] = useState<{ rightW: number; bottomH: number }>({ rightW: 62, bottomH: 26 });
+
+    useEffect(() => {
+      const updateTimer = () => {
+        const list = currentDataRef.current;
+        const lastSec = list && list.length > 0 ? Number(list[list.length - 1].time) : undefined;
+        setCountdownText(formatCountdown(timeframeRef.current, lastSec));
+      };
+      updateTimer();
+      const iv = setInterval(updateTimer, 1000);
+      return () => clearInterval(iv);
+    }, [timeframe]);
 
     const syncCasPriceLine = (price?: number, tf?: string) => {
       const series = seriesRef.current;
@@ -348,7 +543,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
         casPriceLineRef.current = null;
       }
 
-      if (price && price > 0 && tf !== '1D') {
+      if (price && price > 0 && tf !== '1D' && tf !== '1W' && tf !== '1M') {
         try {
           const line = series.createPriceLine({
             price,
@@ -356,7 +551,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
             lineWidth: 1,
             lineStyle: LineStyle.Dashed,
             axisLabelVisible: true,
-            title: '' // Removed "CAS" label name; displays only the price value on the Y axis
+            title: ''
           });
           casPriceLineRef.current = line;
         } catch (e) {
@@ -367,85 +562,78 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
 
     const syncIndicators = (candles: CandlestickData<Time>[], activeList: IndicatorConfig[]) => {
       const chart = chartRef.current;
-      if (!chart || !candles || candles.length === 0) return;
+      const series = seriesRef.current;
+      if (!chart || !series) return;
 
       const seriesMap = indicatorSeriesMapRef.current;
-      const activeIds = new Set(activeList.filter((ind) => ind.enabled && ind.visible).map((ind) => ind.id));
 
-      // Remove inactive or disabled series
-      for (const [id, sList] of Array.from(seriesMap.entries())) {
-        if (!activeIds.has(id)) {
-          sList.forEach((s) => {
-            try {
-              chart.removeSeries(s);
-            } catch {}
-          });
-          seriesMap.delete(id);
+      // Clear previous overlay/sub-pane series
+      for (const [, sList] of Array.from(seriesMap.entries())) {
+        sList.forEach((s) => {
+          try {
+            chart.removeSeries(s);
+          } catch {}
+        });
+      }
+      seriesMap.clear();
+
+      // Remove any secondary panes cleanly before re-creating sub-panes
+      try {
+        while (chart.panes().length > 1) {
+          chart.removePane(chart.panes().length - 1);
         }
+      } catch {}
+
+      // Manage OpeningRangePrimitive cleanly
+      const activeOR = activeList.find((ind) => ind.type === 'OR' && ind.enabled && ind.visible);
+      if (activeOR && candles.length > 0) {
+        if (!orPrimitiveRef.current) {
+          const prim = new OpeningRangePrimitive();
+          series.attachPrimitive(prim);
+          orPrimitiveRef.current = prim;
+        }
+        const dur = activeOR.options.durationMinutes || 60;
+        const showMid = activeOR.options.showMid === true;
+        const orData = computeOpeningRangeBreakout(candles, dur, showMid);
+        orPrimitiveRef.current.update(
+          orData.sessions,
+          activeOR.options.highColor || activeOR.color || '#38bdf8',
+          activeOR.options.lowColor || activeOR.color || '#38bdf8',
+          activeOR.options.midColor || 'rgba(56, 189, 248, 0.45)',
+          showMid,
+          activeOR.lineWidth || 2
+        );
+      } else if (orPrimitiveRef.current) {
+        orPrimitiveRef.current.update([], '#38bdf8', '#38bdf8', 'rgba(56, 189, 248, 0.45)', false, 2);
       }
 
-      // Add or update active series
-      for (const ind of activeList) {
-        if (!ind.enabled || !ind.visible) continue;
+      if (!candles || candles.length === 0) return;
 
-        const existing = seriesMap.get(ind.id);
-        if (existing) {
-          existing.forEach((s) => {
-            try {
-              chart.removeSeries(s);
-            } catch {}
-          });
-          seriesMap.delete(ind.id);
-        }
+      // Track sub-panes dynamically so RSI and ADX each occupy their own clean lower pane
+      const visibleOscillators = activeList.filter(
+        (ind) => (ind.type === 'RSI' || ind.type === 'ADX') && ind.enabled && ind.visible
+      );
+      if (visibleOscillators.length > 0) {
+        try {
+          const mainPane = chart.panes()[0];
+          if (mainPane) {
+            mainPane.setStretchFactor(visibleOscillators.length >= 2 ? 0.60 : 0.76);
+          }
+        } catch {}
+      } else {
+        try {
+          const mainPane = chart.panes()[0];
+          if (mainPane) mainPane.setStretchFactor(1.0);
+        } catch {}
+      }
+
+      for (const ind of activeList) {
+        if (!ind.enabled || !ind.visible || ind.type === 'OR') continue;
 
         const createdList: ISeriesApi<any>[] = [];
 
         try {
-          if (ind.type === 'OR') {
-            const dur = ind.options.durationMinutes || 60;
-            const showMid = ind.options.showMid === true;
-            const orData = computeOpeningRangeBreakout(candles, dur, showMid);
-
-            if (orData.highPoints.length > 0) {
-              const highSeries = chart.addSeries(LineSeries, {
-                color: ind.options.highColor || ind.color || '#38bdf8',
-                lineWidth: (ind.lineWidth || 2) as 1 | 2 | 3 | 4,
-                lineStyle: LineStyle.Solid,
-                priceLineVisible: false,
-                lastValueVisible: true,
-                crosshairMarkerVisible: false,
-                title: ''
-              });
-              highSeries.setData(orData.highPoints);
-              createdList.push(highSeries);
-
-              const lowSeries = chart.addSeries(LineSeries, {
-                color: ind.options.lowColor || ind.color || '#38bdf8',
-                lineWidth: (ind.lineWidth || 2) as 1 | 2 | 3 | 4,
-                lineStyle: LineStyle.Solid,
-                priceLineVisible: false,
-                lastValueVisible: true,
-                crosshairMarkerVisible: false,
-                title: ''
-              });
-              lowSeries.setData(orData.lowPoints);
-              createdList.push(lowSeries);
-
-              if (showMid && orData.midPoints.length > 0) {
-                const midSeries = chart.addSeries(LineSeries, {
-                  color: ind.options.midColor || 'rgba(56, 189, 248, 0.45)',
-                  lineWidth: 1,
-                  lineStyle: LineStyle.Dotted,
-                  priceLineVisible: false,
-                  lastValueVisible: false,
-                  crosshairMarkerVisible: false,
-                  title: ''
-                });
-                midSeries.setData(orData.midPoints);
-                createdList.push(midSeries);
-              }
-            }
-          } else if (ind.type === 'VWAP') {
+          if (ind.type === 'VWAP') {
             const sessionSpecific = ind.options.sessionSpecific !== false;
             const vwapData = computeVWAP(candles, sessionSpecific);
             if (vwapData.length > 0) {
@@ -465,7 +653,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
             const emaData = computeEMA(candles, period);
             if (emaData.length > 0) {
               const eSeries = chart.addSeries(LineSeries, {
-                color: ind.color || '#a855f7',
+                color: ind.color || '#1d4ed8',
                 lineWidth: (ind.lineWidth || 1) as 1 | 2 | 3 | 4,
                 priceLineVisible: false,
                 lastValueVisible: true,
@@ -480,7 +668,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
             const smaData = computeSMA(candles, period);
             if (smaData.length > 0) {
               const sSeries = chart.addSeries(LineSeries, {
-                color: ind.color || '#10b981',
+                color: ind.color || '#22c55e',
                 lineWidth: (ind.lineWidth || 1) as 1 | 2 | 3 | 4,
                 priceLineVisible: false,
                 lastValueVisible: true,
@@ -495,7 +683,6 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
             const volColor = ind.options.volumeColor || ind.color || '#808080';
 
             if (volStyle === 'area') {
-              // Area Chart volume overlay with grey / customizable gradient
               const areaData = candles.map((c) => ({
                 time: c.time,
                 value: (c as any).volume !== undefined ? (c as any).volume : Math.abs(c.close - c.open) * 125000 + 45000
@@ -520,8 +707,12 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
               areaSeries.setData(areaData);
               createdList.push(areaSeries);
             } else {
-              // Bar Chart (Histogram) volume overlay
-              const volData = computeVolumeSeries(candles, ind.options.colorUp || volColor, ind.options.colorDown || '#555555', ind.options.volumeColor);
+              const volData = computeVolumeSeries(
+                candles,
+                ind.options.colorUp || volColor,
+                ind.options.colorDown || '#555555',
+                ind.options.volumeColor
+              );
               if (volData.length > 0) {
                 const volSeries = chart.addSeries(HistogramSeries, {
                   priceFormat: { type: 'volume' },
@@ -539,6 +730,93 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
                 createdList.push(volSeries);
               }
             }
+          } else if (ind.type === 'RSI') {
+            const period = ind.options.period || 14;
+            const rsiData = computeRSI(candles, period);
+            const pane = chart.addPane();
+            pane.setStretchFactor(0.22);
+            const rsiSeries = pane.addSeries(LineSeries, {
+              color: ind.color || '#a855f7',
+              lineWidth: (ind.lineWidth || 2) as 1 | 2 | 3 | 4,
+              priceLineVisible: false,
+              lastValueVisible: true,
+              crosshairMarkerVisible: true,
+              autoscaleInfoProvider: () => ({
+                priceRange: { minValue: 0, maxValue: 100 }
+              })
+            });
+            const ob = ind.options.rsiOverbought ?? 70;
+            const os = ind.options.rsiOversold ?? 30;
+            rsiSeries.createPriceLine({
+              price: ob,
+              color: 'rgba(239, 68, 68, 0.45)',
+              lineWidth: 1,
+              lineStyle: LineStyle.Dashed,
+              axisLabelVisible: false,
+              title: ''
+            });
+            rsiSeries.createPriceLine({
+              price: 50,
+              color: 'rgba(95, 122, 154, 0.25)',
+              lineWidth: 1,
+              lineStyle: LineStyle.Dotted,
+              axisLabelVisible: false,
+              title: ''
+            });
+            rsiSeries.createPriceLine({
+              price: os,
+              color: 'rgba(16, 185, 129, 0.45)',
+              lineWidth: 1,
+              lineStyle: LineStyle.Dashed,
+              axisLabelVisible: false,
+              title: ''
+            });
+            if (rsiData.length > 0) rsiSeries.setData(rsiData);
+            createdList.push(rsiSeries);
+          } else if (ind.type === 'ADX') {
+            const period = ind.options.period || 14;
+            const adxRes = computeADX(candles, period);
+            const pane = chart.addPane();
+            pane.setStretchFactor(0.22);
+            const adxSeries = pane.addSeries(LineSeries, {
+              color: ind.color || '#eab308',
+              lineWidth: (ind.lineWidth || 2) as 1 | 2 | 3 | 4,
+              priceLineVisible: false,
+              lastValueVisible: true,
+              crosshairMarkerVisible: true
+            });
+            adxSeries.createPriceLine({
+              price: 25,
+              color: 'rgba(95, 122, 154, 0.35)',
+              lineWidth: 1,
+              lineStyle: LineStyle.Dashed,
+              axisLabelVisible: false,
+              title: ''
+            });
+            if (adxRes.adx.length > 0) adxSeries.setData(adxRes.adx);
+            createdList.push(adxSeries);
+
+            if (ind.options.showDI !== false) {
+              const plusSeries = pane.addSeries(LineSeries, {
+                color: ind.options.plusDiColor || '#22c55e',
+                lineWidth: 1,
+                priceLineVisible: false,
+                lastValueVisible: false,
+                crosshairMarkerVisible: false
+              });
+              if (adxRes.plusDI.length > 0) plusSeries.setData(adxRes.plusDI);
+              createdList.push(plusSeries);
+
+              const minusSeries = pane.addSeries(LineSeries, {
+                color: ind.options.minusDiColor || '#ef4444',
+                lineWidth: 1,
+                priceLineVisible: false,
+                lastValueVisible: false,
+                crosshairMarkerVisible: false
+              });
+              if (adxRes.minusDI.length > 0) minusSeries.setData(adxRes.minusDI);
+              createdList.push(minusSeries);
+            }
           }
         } catch (e) {
           console.warn(`[CandlestickChart] Error creating series for ${ind.id}:`, e);
@@ -550,40 +828,49 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
       }
     };
 
-    /**
-     * Efficiently update active indicator lines using setData on existing series without rebuilding Canvas context
-     */
     const updateIndicatorData = (candles: CandlestickData<Time>[], activeList: IndicatorConfig[]) => {
       const chart = chartRef.current;
       if (!chart || !candles || candles.length === 0) return;
 
-      const seriesMap = indicatorSeriesMapRef.current;
+      const activeOR = activeList.find((ind) => ind.type === 'OR' && ind.enabled && ind.visible);
+      if (activeOR && orPrimitiveRef.current) {
+        const dur = activeOR.options.durationMinutes || 60;
+        const showMid = activeOR.options.showMid === true;
+        const orData = computeOpeningRangeBreakout(candles, dur, showMid);
+        orPrimitiveRef.current.update(
+          orData.sessions,
+          activeOR.options.highColor || activeOR.color || '#38bdf8',
+          activeOR.options.lowColor || activeOR.color || '#38bdf8',
+          activeOR.options.midColor || 'rgba(56, 189, 248, 0.45)',
+          showMid,
+          activeOR.lineWidth || 2
+        );
+      }
 
+      const seriesMap = indicatorSeriesMapRef.current;
       for (const ind of activeList) {
-        if (!ind.enabled || !ind.visible) continue;
+        if (!ind.enabled || !ind.visible || ind.type === 'OR') continue;
         const existing = seriesMap.get(ind.id);
         if (!existing || existing.length === 0) continue;
 
         try {
-          if (ind.type === 'OR') {
-            const dur = ind.options.durationMinutes || 60;
-            const showMid = ind.options.showMid === true;
-            const orData = computeOpeningRangeBreakout(candles, dur, showMid);
-            if (existing[0] && orData.highPoints.length > 0) existing[0].setData(orData.highPoints);
-            if (existing[1] && orData.lowPoints.length > 0) existing[1].setData(orData.lowPoints);
-            if (existing[2] && orData.midPoints.length > 0) existing[2].setData(orData.midPoints);
-          } else if (ind.type === 'VWAP') {
-            const sessionSpecific = ind.options.sessionSpecific !== false;
-            const vwapData = computeVWAP(candles, sessionSpecific);
+          if (ind.type === 'VWAP') {
+            const vwapData = computeVWAP(candles, ind.options.sessionSpecific !== false);
             if (existing[0] && vwapData.length > 0) existing[0].setData(vwapData);
           } else if (ind.type === 'EMA') {
-            const period = ind.options.period || 20;
-            const emaData = computeEMA(candles, period);
+            const emaData = computeEMA(candles, ind.options.period || 20);
             if (existing[0] && emaData.length > 0) existing[0].setData(emaData);
           } else if (ind.type === 'SMA') {
-            const period = ind.options.period || 50;
-            const smaData = computeSMA(candles, period);
+            const smaData = computeSMA(candles, ind.options.period || 50);
             if (existing[0] && smaData.length > 0) existing[0].setData(smaData);
+          } else if (ind.type === 'RSI') {
+            const rsiData = computeRSI(candles, ind.options.period || 14);
+            if (existing[0] && rsiData.length > 0) existing[0].setData(rsiData);
+          } else if (ind.type === 'ADX') {
+            const adxRes = computeADX(candles, ind.options.period || 14);
+            if (existing[0] && adxRes.adx.length > 0) existing[0].setData(adxRes.adx);
+            if (existing[1] && adxRes.plusDI.length > 0) existing[1].setData(adxRes.plusDI);
+            if (existing[2] && adxRes.minusDI.length > 0) existing[2].setData(adxRes.minusDI);
           } else if (ind.type === 'VOLUME') {
             const volStyle = ind.options.volumeStyle || 'area';
             const volColor = ind.options.volumeColor || ind.color || '#808080';
@@ -594,7 +881,12 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
               }));
               if (existing[0]) existing[0].setData(areaData);
             } else {
-              const volData = computeVolumeSeries(candles, ind.options.colorUp || volColor, ind.options.colorDown || '#555555', ind.options.volumeColor);
+              const volData = computeVolumeSeries(
+                candles,
+                ind.options.colorUp || volColor,
+                ind.options.colorDown || '#555555',
+                ind.options.volumeColor
+              );
               if (existing[0] && volData.length > 0) existing[0].setData(volData);
             }
           }
@@ -604,84 +896,78 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
       }
     };
 
-    /**
-     * TradingView-standard Real-Time Candle Formation:
-     * - Truncates incoming tick timestamp to the timeframe's interval bucket (shifted by +19800 IST)
-     * - If the interval has advanced: opens and appends a brand-new candle to the series
-     * - If within the active interval: updates high, low, close in-place
-     */
     const updateLiveTickPrice = (price: number) => {
       try {
         if (typeof price !== 'number' || isNaN(price) || price <= 0) return;
         const list = currentDataRef.current;
         if (!list || list.length === 0) return;
 
-        const currentTf = timeframeRef.current || '15m';
+        const currentTf = (timeframeRef.current || '5m').trim();
         const lastBar = list[list.length - 1];
         const lastBarTime = Number(lastBar.time);
 
-        // Unified IST offset (+19800s) matching FYERS historical candles
         const IST_OFFSET_SECONDS = 19800;
         const nowIstSeconds = Math.floor(Date.now() / 1000) + IST_OFFSET_SECONDS;
 
-        let activeBar: CandlestickData<Time>;
-
-        if (currentTf === '1D') {
-          const dayBucket = Math.floor(nowIstSeconds / 86400) * 86400;
-          if (dayBucket > lastBarTime) {
-            activeBar = {
-              time: dayBucket as Time,
-              open: price,
-              high: price,
-              low: price,
-              close: price
-            };
-            list.push(activeBar);
-          } else {
-            activeBar = {
-              ...lastBar,
-              close: price,
-              high: Math.max(lastBar.high, price),
-              low: Math.min(lastBar.low, price)
-            };
-            list[list.length - 1] = activeBar;
-          }
+        let bucketTime: number;
+        if (currentTf === '1M' || currentTf === 'M') {
+          const d = new Date(nowIstSeconds * 1000);
+          bucketTime = Math.floor(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1, 9, 15, 0) / 1000);
+        } else if (currentTf.toLowerCase() === '1w') {
+          const d = new Date(nowIstSeconds * 1000);
+          const day = d.getUTCDay();
+          const daysSinceMon = (day + 6) % 7;
+          const mondayStart = Math.floor(nowIstSeconds / 86400) * 86400 - daysSinceMon * 86400;
+          bucketTime = mondayStart + 9 * 3600 + 15 * 60;
+        } else if (currentTf.toLowerCase() === '1d') {
+          bucketTime = Math.floor(nowIstSeconds / 86400) * 86400;
         } else {
           const intervalSec = getTimeframeSeconds(currentTf);
-          const bucketTime = Math.floor(nowIstSeconds / intervalSec) * intervalSec;
-
-          if (bucketTime > lastBarTime) {
-            // Interval boundary crossed: advance and open a brand-new candle!
-            activeBar = {
-              time: bucketTime as Time,
-              open: price,
-              high: price,
-              low: price,
-              close: price
-            };
-            list.push(activeBar);
+          const dayStart = Math.floor(nowIstSeconds / 86400) * 86400;
+          const anchor = dayStart + 9 * 3600 + 15 * 60;
+          if (nowIstSeconds >= anchor) {
+            const elapsed = nowIstSeconds - anchor;
+            bucketTime = anchor + Math.floor(elapsed / intervalSec) * intervalSec;
           } else {
-            // Within current candle interval: update high, low, close
-            activeBar = {
-              ...lastBar,
-              close: price,
-              high: Math.max(lastBar.high, price),
-              low: Math.min(lastBar.low, price)
-            };
-            list[list.length - 1] = activeBar;
+            bucketTime = Math.floor(nowIstSeconds / intervalSec) * intervalSec;
           }
+        }
+
+        let activeBar: CandlestickData<Time>;
+        let addedNewBar = false;
+
+        if (bucketTime > lastBarTime) {
+          activeBar = {
+            time: bucketTime as Time,
+            open: price,
+            high: price,
+            low: price,
+            close: price
+          };
+          list.push(activeBar);
+          addedNewBar = true;
+        } else {
+          activeBar = {
+            ...lastBar,
+            close: price,
+            high: Math.max(lastBar.high, price),
+            low: Math.min(lastBar.low, price)
+          };
+          list[list.length - 1] = activeBar;
         }
 
         seriesRef.current?.update(activeBar);
         priceBoxRef.current?.update(price, activeBar.close >= activeBar.open);
         setOhlcInfo(computeOHLCInfo(list, list.length - 1));
-        updateIndicatorData(list, indicators);
+        updateIndicatorData(list, indicatorsRef.current);
+        if (addedNewBar) {
+          onBarUpdateRef.current?.([...list]);
+        }
       } catch (err) {
         console.warn('[CandlestickChart] Error updating live price tick:', err);
       }
     };
 
-    // Expose imperative API for streaming real-time updates (FYERS WebSocket readiness)
     useImperativeHandle(
       ref,
       (): ChartImperativeHandle => ({
@@ -707,18 +993,26 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
               list.push(cleanCandle);
             }
             setOhlcInfo(computeOHLCInfo(list, list.length - 1));
-            updateIndicatorData(list, indicators);
+            updateIndicatorData(list, indicatorsRef.current);
           } catch (err) {
             console.warn('[CandlestickChart] Error updating candle:', err);
           }
         },
         updateLastBarPrice: updateLiveTickPrice,
-        setData: (newData) => {
+        setData: (newData, preserveView = false) => {
           try {
             const clean = sanitizeCandles(newData);
-            if (clean.length === 0) return;
+            if (clean.length === 0) {
+              seriesRef.current?.setData([]);
+              currentDataRef.current = [];
+              setOhlcInfo(null);
+              syncIndicators([], indicatorsRef.current);
+              return;
+            }
             const currentCas = casPriceRef.current;
             const currentTf = timeframeRef.current;
+            const savedLogical = preserveView ? chartRef.current?.timeScale().getVisibleLogicalRange() : null;
+
             try {
               seriesRef.current?.setData(clean);
             } catch (err) {
@@ -730,9 +1024,14 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
               priceBoxRef.current?.update(latest.close, latest.close >= latest.open);
             }
             setOhlcInfo(computeOHLCInfo(clean, clean.length - 1));
-            syncIndicators(clean, indicators);
+            syncIndicators(clean, indicatorsRef.current);
             syncCasPriceLine(currentCas, currentTf);
-            resetChartView(chartRef.current);
+
+            if (preserveView && savedLogical && chartRef.current) {
+              chartRef.current.timeScale().setVisibleLogicalRange(savedLogical);
+            } else {
+              resetChartView(chartRef.current);
+            }
           } catch (err) {
             console.error('Error applying chart data:', err);
           }
@@ -740,13 +1039,46 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
         fitContent: () => {
           resetChartView(chartRef.current);
         },
+        panByBars: (bars: number) => {
+          const ts = chartRef.current?.timeScale();
+          if (!ts) return;
+          const range = ts.getVisibleLogicalRange();
+          if (!range) return;
+          ts.setVisibleLogicalRange({
+            from: range.from + bars,
+            to: range.to + bars
+          });
+        },
+        zoomX: (zoomIn: boolean) => {
+          const ts = chartRef.current?.timeScale();
+          if (!ts) return;
+          const currentSpacing = ts.options().barSpacing || 12;
+          const nextSpacing = zoomIn
+            ? Math.min(80, currentSpacing * 1.18)
+            : Math.max(1.5, currentSpacing * 0.84);
+          ts.applyOptions({ barSpacing: nextSpacing });
+        },
+        zoomY: (zoomIn: boolean) => {
+          const ps = chartRef.current?.priceScale('right');
+          if (!ps) return;
+          const range = ps.getVisibleRange();
+          if (!range) return;
+          const span = range.to - range.from;
+          if (span <= 0) return;
+          const mid = (range.from + range.to) / 2;
+          const factor = zoomIn ? 0.85 : 1.18;
+          const half = (span * factor) / 2;
+          ps.setAutoScale(false);
+          ps.setVisibleRange({ from: mid - half, to: mid + half });
+        },
+        getCandles: () => [...currentDataRef.current],
         applySeriesOptions: (opts) => {
           seriesRef.current?.applyOptions(opts);
         },
         getChart: () => chartRef.current,
         getSeries: () => seriesRef.current
       }),
-      [indicators]
+      []
     );
 
     // Sync indicators whenever indicators prop changes
@@ -754,7 +1086,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
       syncIndicators(currentDataRef.current, indicators);
     }, [indicators]);
 
-    // Sync CAS Price Line whenever casPrice or timeframe changes (reference line only)
+    // Sync CAS Price Line whenever casPrice or timeframe changes
     useEffect(() => {
       syncCasPriceLine(casPrice, timeframe);
     }, [casPrice, timeframe]);
@@ -763,10 +1095,6 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
       const container = containerRef.current;
       if (!container) return;
 
-      // Initialize Lightweight Chart with spec defaults:
-      // - Primary color (#5F7A9A) for Y-axis and X-axis borders & text
-      // - Pure pitch black (#000000) background
-      // - Clean Quicksand font
       const chart = createChart(container, {
         width: container.clientWidth || 600,
         height: typeof height === 'number' ? height : container.clientHeight || 420,
@@ -832,8 +1160,6 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
         ...chartOptions
       });
 
-      // Positive candles: Light grey-white body & wick (#e5e7eb)
-      // Negative candles: Same colour border & wick as positive candles, black body (#000000)
       const POSITIVE_COLOR = '#e5e7eb';
       const NEGATIVE_BODY_COLOR = '#000000';
 
@@ -847,25 +1173,20 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
         wickVisible: true,
         wickUpColor: POSITIVE_COLOR,
         wickDownColor: POSITIVE_COLOR,
-        // Price line in primary steel blue color (#5F7A9A)
         priceLineVisible: true,
         priceLineColor: '#5F7A9A',
         priceLineWidth: 1,
         priceLineStyle: LineStyle.Dashed,
-        lastValueVisible: false, // Custom PriceBoxPrimitive renders the bordered price box
+        lastValueVisible: false,
         ...seriesOptions
       });
 
-      // Set initial data safely with unified numeric epoch timestamps
       const cleanInitial = sanitizeCandles(data);
       if (cleanInitial.length > 0) {
         series.setData(cleanInitial);
         currentDataRef.current = cleanInitial;
-        syncIndicators(cleanInitial, indicators);
       }
-      resetChartView(chart);
 
-      // Attach custom price box primitive for dynamic positive/negative price box with #5F7A9A border
       const lastBar = cleanInitial.length > 0 ? cleanInitial[cleanInitial.length - 1] : null;
       const initialPrice = lastBar ? lastBar.close : (casPrice || 0);
       const initialIsPositive = lastBar ? lastBar.close >= lastBar.open : true;
@@ -876,23 +1197,31 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
       chartRef.current = chart;
       seriesRef.current = series;
 
-      // Sync official CAS price line on small timeframe charts
+      if (cleanInitial.length > 0) {
+        syncIndicators(cleanInitial, indicatorsRef.current);
+      }
+      resetChartView(chart);
       syncCasPriceLine(casPrice, timeframe);
 
-      // Track crosshair move for dynamic OHLC display on whatever candle cursor is on
+      const measureCorner = () => {
+        try {
+          const rw = Math.max(54, Math.round(chart.priceScale('right').width() || 62));
+          const bh = Math.max(24, Math.round(chart.timeScale().height() || 26));
+          setCornerDims((prev) => (prev.rightW === rw && prev.bottomH === bh ? prev : { rightW: rw, bottomH: bh }));
+        } catch {}
+      };
+      setTimeout(measureCorner, 80);
+
       const handleCrosshairMove = (param: MouseEventParams<Time>) => {
         const list = currentDataRef.current;
         if (list.length === 0) return;
 
-        // If mouse has left the chart pane
         if (!param.point) {
           setOhlcInfo(computeOHLCInfo(list, list.length - 1));
           return;
         }
 
         let targetIdx = -1;
-
-        // 1. Direct coordinate to logical conversion from cursor X (most continuous & responsive)
         if (chartRef.current && param.point) {
           const logical = chartRef.current.timeScale().coordinateToLogical(param.point.x);
           if (logical !== null) {
@@ -902,14 +1231,10 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
             }
           }
         }
-
-        // 2. Exact time match
         if (targetIdx === -1 && param.time !== undefined) {
           const tStr = String(param.time);
           targetIdx = list.findIndex((d) => String(d.time) === tStr);
         }
-
-        // 3. Logical index directly from param
         if (targetIdx === -1 && typeof param.logical === 'number') {
           const idx = Math.round(param.logical);
           if (idx >= 0 && idx < list.length) {
@@ -917,22 +1242,9 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
           }
         }
 
-        // 4. Series data fallback
-        if (targetIdx === -1 && param.seriesData) {
-          for (const val of param.seriesData.values()) {
-            if (val && typeof val === 'object' && 'time' in val) {
-              const tStr = String((val as CandlestickData<Time>).time);
-              targetIdx = list.findIndex((d) => String(d.time) === tStr);
-              if (targetIdx !== -1) break;
-            }
-          }
-        }
-
         if (targetIdx !== -1) {
           const info = computeOHLCInfo(list, targetIdx);
-          if (info) {
-            setOhlcInfo(info);
-          }
+          if (info) setOhlcInfo(info);
         }
       };
 
@@ -944,7 +1256,6 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
       };
       container.addEventListener('mouseleave', handleMouseLeave);
 
-      // Handle responsiveness via ResizeObserver
       const resizeObserver = new ResizeObserver((entries) => {
         if (!entries || entries.length === 0) return;
         const entry = entries[0];
@@ -956,12 +1267,12 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
             width: newWidth,
             ...(newHeight > 0 ? { height: newHeight } : {})
           });
+          measureCorner();
         }
       });
 
       resizeObserver.observe(container);
 
-      // Notify consumer that chart is ready
       if (onChartReady) {
         onChartReady({
           updateCandle: (candle) => {
@@ -986,20 +1297,36 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
             }
             setOhlcInfo(computeOHLCInfo(newData, newData.length - 1));
           },
-          fitContent: () => {
-            resetChartView(chart);
+          fitContent: () => resetChartView(chart),
+          panByBars: (bars) => {
+            const r = chart.timeScale().getVisibleLogicalRange();
+            if (r) chart.timeScale().setVisibleLogicalRange({ from: r.from + bars, to: r.to + bars });
           },
+          zoomX: (zoomIn) => {
+            const sp = chart.timeScale().options().barSpacing || 12;
+            chart.timeScale().applyOptions({ barSpacing: zoomIn ? Math.min(80, sp * 1.18) : Math.max(1.5, sp * 0.84) });
+          },
+          zoomY: (zoomIn) => {
+            const ps = chart.priceScale('right');
+            const r = ps.getVisibleRange();
+            if (!r) return;
+            const span = r.to - r.from;
+            if (span <= 0) return;
+            const mid = (r.from + r.to) / 2;
+            const half = (span * (zoomIn ? 0.85 : 1.18)) / 2;
+            ps.setAutoScale(false);
+            ps.setVisibleRange({ from: mid - half, to: mid + half });
+          },
+          getCandles: () => [...currentDataRef.current],
           applySeriesOptions: (opts) => series.applyOptions(opts),
           getChart: () => chart,
           getSeries: () => series
         });
       }
 
-      // Y-axis Price Scale mouse wheel zooming (TradingView-style vertical scaling)
       const handleWheel = (e: WheelEvent) => {
         if (!chartRef.current) return;
         const rect = container.getBoundingClientRect();
-        // The price scale (Y-axis) is aligned to the right edge of container
         const rightScale = chartRef.current.priceScale('right');
         const scaleWidth = rightScale.width() || 65;
         const isOverYAxis = e.clientX >= rect.right - scaleWidth - 5;
@@ -1018,10 +1345,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
           const ratio = Math.max(0.05, Math.min(0.95, mouseY / rect.height));
           const focalPrice = range.to - ratio * span;
 
-          // Scroll up (negative delta) zooms in (compresses span, candles taller)
-          // Scroll down (positive delta) zooms out (expands span, candles shorter)
           const zoomFactor = e.deltaY < 0 ? 0.88 : 1.14;
-
           const newTo = focalPrice + (range.to - focalPrice) * zoomFactor;
           const newFrom = focalPrice - (focalPrice - range.from) * zoomFactor;
 
@@ -1051,7 +1375,6 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
       container.addEventListener('wheel', handleWheel, { passive: false });
       container.addEventListener('dblclick', handleDblClick);
 
-      // Cleanup on unmount
       return () => {
         resizeObserver.disconnect();
         container.removeEventListener('mouseleave', handleMouseLeave);
@@ -1069,10 +1392,10 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
         chartRef.current = null;
         seriesRef.current = null;
         priceBoxRef.current = null;
+        orPrimitiveRef.current = null;
       };
-    }, []); // Run on mount
+    }, []);
 
-    // Update dataset when data prop changes
     useEffect(() => {
       try {
         if (seriesRef.current && data) {
@@ -1091,7 +1414,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
               priceBoxRef.current?.update(latest.close, latest.close >= latest.open);
             }
             setOhlcInfo(computeOHLCInfo(clean, clean.length - 1));
-            syncIndicators(clean, indicators);
+            syncIndicators(clean, indicatorsRef.current);
             syncCasPriceLine(currentCas, currentTf);
           }
         }
@@ -1106,6 +1429,16 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
       }
     }, [seriesOptions]);
 
+    // Group active indicators for clean OHLC indicator strip (EMA stacked, SMA stacked, no dots, no gear)
+    const groupedIndicatorBadges = useMemo(() => {
+      const enabled = (indicators || []).filter((ind) => ind.enabled);
+      const emas = enabled.filter((ind) => ind.type === 'EMA');
+      const smas = enabled.filter((ind) => ind.type === 'SMA');
+      const others = enabled.filter((ind) => ind.type !== 'EMA' && ind.type !== 'SMA');
+
+      return { emas, smas, others };
+    }, [indicators]);
+
     const changePctSign = ohlcInfo && ohlcInfo.changePct > 0 ? '+' : '';
     const changeValSign = ohlcInfo && ohlcInfo.changeVal > 0 ? '+' : '';
 
@@ -1119,13 +1452,14 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
           position: 'relative',
           overflow: 'hidden',
           borderRadius: '4px',
+          fontFamily: 'Quicksand, sans-serif',
           ...style
         }}
       >
         {/* Chart Canvas */}
         <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
 
-        {/* Top-Left OHLC & Day Change Overlay (Below NIFTY 50 INDEX) */}
+        {/* Top-Left OHLC & Change Overlay */}
         {ohlcInfo && (
           <div
             style={{
@@ -1146,31 +1480,22 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
               userSelect: 'none'
             }}
           >
-            {/* O */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
               <span style={{ color: '#5F7A9A', fontWeight: 700 }}>O</span>
               <span style={{ color: '#e5e7eb', fontWeight: 600 }}>{formatPrice(ohlcInfo.open)}</span>
             </div>
-
-            {/* H */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
               <span style={{ color: '#5F7A9A', fontWeight: 700 }}>H</span>
               <span style={{ color: '#e5e7eb', fontWeight: 600 }}>{formatPrice(ohlcInfo.high)}</span>
             </div>
-
-            {/* L */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
               <span style={{ color: '#5F7A9A', fontWeight: 700 }}>L</span>
               <span style={{ color: '#e5e7eb', fontWeight: 600 }}>{formatPrice(ohlcInfo.low)}</span>
             </div>
-
-            {/* C */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
               <span style={{ color: '#5F7A9A', fontWeight: 700 }}>C</span>
               <span style={{ color: '#e5e7eb', fontWeight: 600 }}>{formatPrice(ohlcInfo.close)}</span>
             </div>
-
-            {/* Day Change: % in blue (#5F7A9A), then absolute day change in grey-white (#e5e7eb) */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginLeft: '4px' }}>
               <span style={{ color: '#5F7A9A', fontWeight: 700 }}>
                 {changePctSign}{ohlcInfo.changePct.toFixed(2)}%
@@ -1182,8 +1507,10 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
           </div>
         )}
 
-        {/* Active Indicators Overlay Badges (Double-Click on badge to open respective settings) */}
-        {indicators && indicators.some((ind) => ind.enabled && ind.visible) && (
+        {/* Active Indicators Bar Under OHLC (Single-click to Hide/Show, Stacked EMA/SMA, No dots/gear) */}
+        {(groupedIndicatorBadges.others.length > 0 ||
+          groupedIndicatorBadges.emas.length > 0 ||
+          groupedIndicatorBadges.smas.length > 0) && (
           <div
             style={{
               position: 'absolute',
@@ -1198,79 +1525,191 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
               userSelect: 'none'
             }}
           >
-            {indicators
-              .filter((ind) => ind.enabled && ind.visible)
-              .map((ind) => (
+            {/* Non-MA Indicators: OR (<tf>), VWAP (Session), VOL (...), RSI (...), ADX (...) */}
+            {groupedIndicatorBadges.others.map((ind) => {
+              const isHidden = !ind.visible;
+              let displayText = ind.shortName;
+              if (ind.type === 'OR') {
+                displayText = `OR (${formatDurationLabel(ind.options.durationMinutes || 60)})`;
+              } else if (ind.type === 'VWAP') {
+                displayText = `VWAP (${ind.options.sessionSpecific !== false ? 'Session' : 'Cont'})`;
+              } else if (ind.type === 'VOLUME') {
+                displayText = `VOL (${ind.options.volumeStyle === 'bar' ? 'Bar' : 'Area'})`;
+              } else if (ind.type === 'RSI') {
+                displayText = `RSI (${ind.options.period || 14})`;
+              } else if (ind.type === 'ADX') {
+                displayText = `ADX (${ind.options.period || 14})`;
+              }
+
+              return (
                 <div
                   key={ind.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleIndicatorVisibility?.([ind.id]);
+                  }}
                   onDoubleClick={(e) => {
                     e.stopPropagation();
                     onOpenIndicatorSettings?.(ind.id);
                   }}
-                  title={`Double click to open ${ind.shortName} settings`}
+                  title={isHidden ? 'Click to show · Double-click for settings' : 'Click to hide · Double-click for settings'}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '5px',
-                    backgroundColor: 'rgba(5, 5, 5, 0.88)',
-                    border: `1px solid ${ind.color || '#5F7A9A'}`,
+                    backgroundColor: isHidden ? 'rgba(20, 20, 20, 0.72)' : 'rgba(5, 5, 5, 0.88)',
+                    border: `1px solid ${isHidden ? '#525252' : ind.color || '#5F7A9A'}`,
                     borderRadius: '3px',
-                    padding: '2px 7px',
-                    color: '#e5e7eb',
+                    padding: '2px 8px',
+                    color: isHidden ? '#9ca3af' : '#e5e7eb',
+                    textDecoration: isHidden ? 'line-through' : 'none',
                     cursor: 'pointer',
                     backdropFilter: 'blur(4px)',
-                    transition: 'all 0.15s ease'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = 'rgba(95, 122, 154, 0.2)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = 'rgba(5, 5, 5, 0.88)';
+                    transition: 'all 0.12s ease',
+                    fontWeight: 600
                   }}
                 >
-                  <span
-                    style={{
-                      width: '6px',
-                      height: '6px',
-                      borderRadius: '50%',
-                      backgroundColor: ind.color || '#5F7A9A',
-                      boxShadow: `0 0 5px ${ind.color || '#5F7A9A'}`
-                    }}
-                  />
-                  <span style={{ fontWeight: 600 }}>{ind.shortName}</span>
-                  {ind.type === 'OR' && (
-                    <span style={{ color: '#9ca3af', fontSize: '0.60rem' }}>
-                      ({ind.options.durationMinutes || 60}m)
-                    </span>
-                  )}
-                  {ind.type === 'VWAP' && (
-                    <span style={{ color: '#9ca3af', fontSize: '0.60rem' }}>
-                      ({ind.options.sessionSpecific !== false ? 'Session' : 'Cont'})
-                    </span>
-                  )}
-                  {ind.type === 'VOLUME' && (
-                    <span style={{ color: '#9ca3af', fontSize: '0.60rem', textTransform: 'capitalize' }}>
-                      ({ind.options.volumeStyle || 'area'})
-                    </span>
-                  )}
-                  <svg
-                    width="10"
-                    height="10"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="#9ca3af"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    style={{ marginLeft: '2px' }}
-                  >
-                    <circle cx="12" cy="12" r="3"></circle>
-                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-                  </svg>
+                  <span>{displayText}</span>
                 </div>
-              ))}
+              );
+            })}
+
+            {/* Stacked EMA Pill: EMA (10,20,50) with each period individually colored */}
+            {groupedIndicatorBadges.emas.length > 0 && (() => {
+              const allHidden = groupedIndicatorBadges.emas.every((e) => !e.visible);
+              const ids = groupedIndicatorBadges.emas.map((e) => e.id);
+              return (
+                <div
+                  key="group-ema"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleIndicatorVisibility?.(ids);
+                  }}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    onOpenIndicatorSettings?.(ids[0]);
+                  }}
+                  title={allHidden ? 'Click to show EMAs · Double-click for settings' : 'Click to hide EMAs · Double-click for settings'}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '2px',
+                    backgroundColor: allHidden ? 'rgba(20, 20, 20, 0.72)' : 'rgba(5, 5, 5, 0.88)',
+                    border: `1px solid ${allHidden ? '#525252' : '#5F7A9A'}`,
+                    borderRadius: '3px',
+                    padding: '2px 8px',
+                    color: allHidden ? '#9ca3af' : '#e5e7eb',
+                    textDecoration: allHidden ? 'line-through' : 'none',
+                    cursor: 'pointer',
+                    backdropFilter: 'blur(4px)',
+                    transition: 'all 0.12s ease',
+                    fontWeight: 600
+                  }}
+                >
+                  <span>EMA (</span>
+                  {groupedIndicatorBadges.emas.map((ema, idx) => (
+                    <span key={ema.id}>
+                      <span
+                        style={{
+                          color: allHidden || !ema.visible ? '#9ca3af' : ema.color,
+                          textDecoration: allHidden || !ema.visible ? 'line-through' : 'none',
+                          fontWeight: 700
+                        }}
+                      >
+                        {ema.options.period || 20}
+                      </span>
+                      {idx < groupedIndicatorBadges.emas.length - 1 && (
+                        <span style={{ color: allHidden ? '#9ca3af' : '#737373' }}>,</span>
+                      )}
+                    </span>
+                  ))}
+                  <span>)</span>
+                </div>
+              );
+            })()}
+
+            {/* Stacked SMA Pill: SMA (20,50,200) with each period individually colored */}
+            {groupedIndicatorBadges.smas.length > 0 && (() => {
+              const allHidden = groupedIndicatorBadges.smas.every((s) => !s.visible);
+              const ids = groupedIndicatorBadges.smas.map((s) => s.id);
+              return (
+                <div
+                  key="group-sma"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleIndicatorVisibility?.(ids);
+                  }}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    onOpenIndicatorSettings?.(ids[0]);
+                  }}
+                  title={allHidden ? 'Click to show SMAs · Double-click for settings' : 'Click to hide SMAs · Double-click for settings'}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '2px',
+                    backgroundColor: allHidden ? 'rgba(20, 20, 20, 0.72)' : 'rgba(5, 5, 5, 0.88)',
+                    border: `1px solid ${allHidden ? '#525252' : '#5F7A9A'}`,
+                    borderRadius: '3px',
+                    padding: '2px 8px',
+                    color: allHidden ? '#9ca3af' : '#e5e7eb',
+                    textDecoration: allHidden ? 'line-through' : 'none',
+                    cursor: 'pointer',
+                    backdropFilter: 'blur(4px)',
+                    transition: 'all 0.12s ease',
+                    fontWeight: 600
+                  }}
+                >
+                  <span>SMA (</span>
+                  {groupedIndicatorBadges.smas.map((sma, idx) => (
+                    <span key={sma.id}>
+                      <span
+                        style={{
+                          color: allHidden || !sma.visible ? '#9ca3af' : sma.color,
+                          textDecoration: allHidden || !sma.visible ? 'line-through' : 'none',
+                          fontWeight: 700
+                        }}
+                      >
+                        {sma.options.period || 50}
+                      </span>
+                      {idx < groupedIndicatorBadges.smas.length - 1 && (
+                        <span style={{ color: allHidden ? '#9ca3af' : '#737373' }}>,</span>
+                      )}
+                    </span>
+                  ))}
+                  <span>)</span>
+                </div>
+              );
+            })()}
           </div>
         )}
+
+        {/* Candle Countdown Timer Anchored at Corner Where X-Axis and Y-Axis Meet */}
+        <div
+          title={`Time remaining until current ${timeframe} candle closes`}
+          style={{
+            position: 'absolute',
+            right: 0,
+            bottom: 0,
+            width: `${cornerDims.rightW}px`,
+            height: `${cornerDims.bottomH}px`,
+            backgroundColor: '#050505',
+            borderTop: '1px solid #5F7A9A',
+            borderLeft: '1px solid #5F7A9A',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '0.66rem',
+            fontWeight: 700,
+            color: '#e5e7eb',
+            fontFamily: 'Quicksand, sans-serif',
+            letterSpacing: '0.02em',
+            zIndex: 12,
+            pointerEvents: 'none',
+            userSelect: 'none'
+          }}
+        >
+          {countdownText}
+        </div>
       </div>
     );
   }

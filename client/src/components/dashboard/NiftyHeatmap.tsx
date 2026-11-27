@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { SecurityQuote } from '@pm-vision/shared';
 
 export type HeatmapTimeFilter = '15m' | '30m' | '1H' | '1D' | '1W';
 
@@ -1041,6 +1042,7 @@ function layoutSquarified<T extends { weight: number }>(
 }
 
 interface NiftyHeatmapProps {
+  securities?: SecurityQuote[];
   timeFilter?: HeatmapTimeFilter;
   onTimeFilterChange?: (tf: HeatmapTimeFilter) => void;
   onSelectConstituent?: (c: Constituent) => void;
@@ -1049,6 +1051,7 @@ interface NiftyHeatmapProps {
 }
 
 export const NiftyHeatmap: React.FC<NiftyHeatmapProps> = ({
+  securities = [],
   timeFilter: externalTimeFilter,
   onTimeFilterChange,
   onSelectConstituent,
@@ -1069,6 +1072,43 @@ export const NiftyHeatmap: React.FC<NiftyHeatmapProps> = ({
     setInternalTimeFilter(tf);
     onTimeFilterChange?.(tf);
   };
+
+  // Overlay real-time quotes onto Nifty 50 constituents so heatmap tiles tick live
+  const { liveConstituents, liveFeedCount } = useMemo(() => {
+    const map = new Map<string, SecurityQuote>();
+    for (const s of securities) {
+      map.set(s.symbol.toUpperCase(), s);
+    }
+
+    let matched = 0;
+    const enriched = NIFTY_50_CONSTITUENTS.map((base) => {
+      const live = map.get(base.symbol.toUpperCase());
+      if (!live || live.ltp <= 0) return base;
+      matched++;
+
+      const liveVwapDiffPct =
+        live.vwap > 0 ? parseFloat((((live.ltp - live.vwap) / live.vwap) * 100).toFixed(2)) : live.changePct;
+      const liveOpenDiffPct =
+        live.open > 0 ? parseFloat((((live.ltp - live.open) / live.open) * 100).toFixed(2)) : live.changePct;
+
+      return {
+        ...base,
+        ltp: live.ltp,
+        high: live.high > 0 ? live.high : base.high,
+        low: live.low > 0 ? live.low : base.low,
+        volume: live.volume && live.volume !== '—' && live.volume !== '0M' ? live.volume : base.volume,
+        changes: {
+          ...base.changes,
+          '15m': liveVwapDiffPct,
+          '30m': liveOpenDiffPct,
+          '1H': parseFloat(((liveOpenDiffPct + live.changePct) / 2).toFixed(2)),
+          '1D': parseFloat(live.changePct.toFixed(2))
+        }
+      };
+    });
+
+    return { liveConstituents: enriched, liveFeedCount: matched };
+  }, [securities]);
 
   // Measure container size dynamically via ResizeObserver
   useEffect(() => {
@@ -1092,13 +1132,13 @@ export const NiftyHeatmap: React.FC<NiftyHeatmapProps> = ({
   // Distinct sectors list (with 'All' at beginning)
   const sectors = useMemo(() => {
     const set = new Set<string>();
-    NIFTY_50_CONSTITUENTS.forEach((c) => set.add(c.sector));
+    liveConstituents.forEach((c) => set.add(c.sector));
     return ['All', ...Array.from(set)];
-  }, []);
+  }, [liveConstituents]);
 
   // Filtered constituents based on search and optional sector selection
   const filteredConstituents = useMemo(() => {
-    return NIFTY_50_CONSTITUENTS.filter((c) => {
+    return liveConstituents.filter((c) => {
       const matchSector = selectedSector === 'All' || c.sector === selectedSector;
       const matchSearch =
         !searchQuery ||
@@ -1106,7 +1146,7 @@ export const NiftyHeatmap: React.FC<NiftyHeatmapProps> = ({
         c.name.toLowerCase().includes(searchQuery.toLowerCase());
       return matchSector && matchSearch;
     });
-  }, [selectedSector, searchQuery]);
+  }, [liveConstituents, selectedSector, searchQuery]);
 
   // Compute Hierarchical TradingView-Style Sector Split Treemap
   const sectorBlocks = useMemo<SectorBlock[]>(() => {
@@ -1261,8 +1301,28 @@ export const NiftyHeatmap: React.FC<NiftyHeatmapProps> = ({
           <span style={{ fontWeight: 800, fontSize: '0.86rem', letterSpacing: '-0.01em', color: '#ffffff' }}>
             NIFTY 50 HEATMAP
           </span>
-          <span style={{ fontSize: '0.68rem', color: '#5F7A9A', fontWeight: 600 }}>
-            (Nov 19, 2026)
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '5px',
+              fontSize: '0.66rem',
+              color: liveFeedCount > 0 ? '#34d399' : '#5F7A9A',
+              fontWeight: 600
+            }}
+          >
+            {liveFeedCount > 0 && (
+              <span
+                style={{
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '50%',
+                  backgroundColor: '#10b981',
+                  boxShadow: '0 0 6px #10b981'
+                }}
+              />
+            )}
+            <span>{liveFeedCount > 0 ? `LIVE (${liveFeedCount}/50)` : '50 Constituents'}</span>
           </span>
         </div>
 

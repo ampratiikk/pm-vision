@@ -74,6 +74,7 @@ interface SymbolSearchModalProps {
   onClose: () => void;
   onSelectSymbol: (symbol: string, name: string, sector: string, basePrice: number) => void;
   activeSymbol?: string;
+  initialQuery?: string;
   catalog?: InstrumentCatalogResponse | null;
   securities?: SecurityQuote[];
   onRequestQuotes?: (symbols: string[]) => void;
@@ -84,6 +85,7 @@ export const SymbolSearchModal: React.FC<SymbolSearchModalProps> = ({
   onClose,
   onSelectSymbol,
   activeSymbol = 'NIFTY 50',
+  initialQuery = '',
   catalog = null,
   securities = [],
   onRequestQuotes
@@ -96,11 +98,18 @@ export const SymbolSearchModal: React.FC<SymbolSearchModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      setQuery('');
+      setQuery(initialQuery || '');
       setSelectedIndex(0);
-      setTimeout(() => inputRef.current?.focus(), 50);
+      setTimeout(() => {
+        const el = inputRef.current;
+        if (el) {
+          el.focus();
+          const len = (initialQuery || '').length;
+          el.setSelectionRange(len, len);
+        }
+      }, 30);
     }
-  }, [isOpen]);
+  }, [isOpen, initialQuery]);
 
   const securityMap = useMemo(() => {
     const map = new Map<string, SecurityQuote>();
@@ -631,16 +640,16 @@ export const SymbolSearchModal: React.FC<SymbolSearchModalProps> = ({
                   </div>
 
                   <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                    <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#ffffff', fontFamily: 'monospace' }}>
+                    <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#ffffff', fontFamily: 'Quicksand, sans-serif' }}>
                       {ltp > 0 ? ltp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
                     </div>
                     {ltp > 0 ? (
-                      <div style={{ fontSize: '0.65rem', fontWeight: 600, color: isPositive ? '#10b981' : '#ef4444', fontFamily: 'monospace' }}>
+                      <div style={{ fontSize: '0.65rem', fontWeight: 600, color: isPositive ? '#10b981' : '#ef4444', fontFamily: 'Quicksand, sans-serif' }}>
                         {isPositive ? '+' : ''}{change.toFixed(2)} ({isPositive ? '+' : ''}{changePct.toFixed(2)}%)
                       </div>
                     ) : (
                       <div style={{ fontSize: '0.60rem', color: '#525252' }}>
-                        {item.category === 'INDEX_FUTURES' || item.category === 'STOCK_FUTURES' ? 'FYERS FUT' : 'NSE'}
+                        {item.category === 'INDEX_FUTURES' || item.category === 'STOCK_FUTURES' ? 'FUT' : 'NSE'}
                       </div>
                     )}
                   </div>

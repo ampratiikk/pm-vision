@@ -19,6 +19,7 @@ export function createWebSocketConnection(callbacks: WebSocketCallbacks): WebSoc
   let reconnectAttempts = 0;
   let reconnectTimer: any = null;
   let pingTimer: any = null;
+  let lastMessageAt = Date.now();
   const subscribedSymbols = new Set<string>();
 
   const getWsUrl = (): string => {
@@ -38,9 +39,18 @@ export function createWebSocketConnection(callbacks: WebSocketCallbacks): WebSoc
 
   const startHeartbeat = () => {
     stopHeartbeat();
+    lastMessageAt = Date.now();
     pingTimer = setInterval(() => {
+      // Recover silently from zombie/half-open connections if no frames arrived in >38s
+      if (socket && Date.now() - lastMessageAt > 38000) {
+        console.warn('[WebSocket] Stream silent for >38s, forcing clean reconnect...');
+        try {
+          socket.close();
+        } catch {}
+        return;
+      }
       send({ type: 'PING', timestamp: new Date().toISOString() });
-    }, 20000);
+    }, 15000);
   };
 
   const stopHeartbeat = () => {
@@ -59,6 +69,7 @@ export function createWebSocketConnection(callbacks: WebSocketCallbacks): WebSoc
 
       socket.addEventListener('open', () => {
         reconnectAttempts = 0;
+        lastMessageAt = Date.now();
         startHeartbeat();
         callbacks.onOpen?.();
 
@@ -83,6 +94,7 @@ export function createWebSocketConnection(callbacks: WebSocketCallbacks): WebSoc
       });
 
       socket.addEventListener('message', (event) => {
+        lastMessageAt = Date.now();
         try {
           const data = JSON.parse(event.data) as WebSocketMessage;
           callbacks.onMessage?.(data);

@@ -10,6 +10,20 @@ import {
 
 export type { CandlestickData, Time };
 
+export const MAX_MA_COUNT = 8;
+
+// Ordered 1st..8th default colors for EMA & SMA (Dark Blue, Orange, Red, Violet, Pink, Yellow, Green, Brown)
+export const MA_DEFAULT_COLORS: string[] = [
+  '#1d4ed8', // 1st: Dark Blue
+  '#f97316', // 2nd: Orange
+  '#ef4444', // 3rd: Red
+  '#8b5cf6', // 4th: Violet
+  '#ec4899', // 5th: Pink
+  '#eab308', // 6th: Yellow
+  '#22c55e', // 7th: Green
+  '#a16207'  // 8th: Brown
+];
+
 export interface CandleColorSettings {
   upBodyColor: string;
   downBodyColor: string;
@@ -67,106 +81,37 @@ export const CANDLESTICK_THEMES: CandlestickThemePreset[] = [
 ];
 
 export interface ChartImperativeHandle {
-  /**
-   * Update the latest candle or append a new candle in real-time.
-   */
   updateCandle: (candle: CandlestickData<Time>) => void;
-
-  /**
-   * Update the latest bar's close price (and adjust high/low if breached) in-place without creating extra bars.
-   */
   updateLastBarPrice: (price: number) => void;
-
-  /**
-   * Replace the full historical dataset.
-   */
-  setData: (data: CandlestickData<Time>[]) => void;
-
-  /**
-   * Auto-fit content to the visible viewport.
-   */
+  setData: (data: CandlestickData<Time>[], preserveView?: boolean) => void;
   fitContent: () => void;
-
-  /**
-   * Dynamically apply candlestick series visual options (colors, borders, wicks).
-   */
+  panByBars: (bars: number) => void;
+  zoomX: (zoomIn: boolean) => void;
+  zoomY: (zoomIn: boolean) => void;
+  getCandles: () => CandlestickData<Time>[];
   applySeriesOptions: (options: CandlestickSeriesPartialOptions) => void;
-
-  /**
-   * Direct access to the Lightweight Charts IChartApi instance.
-   */
   getChart: () => IChartApi | null;
-
-  /**
-   * Direct access to the candlestick series instance.
-   */
   getSeries: () => ISeriesApi<'Candlestick'> | null;
 }
 
 export interface CandlestickChartProps {
-  /**
-   * Historical candlestick data array.
-   */
   data: CandlestickData<Time>[];
-
-  /**
-   * Optional custom chart options (background, grid, layout, etc.).
-   */
   chartOptions?: DeepPartial<ChartOptions>;
-
-  /**
-   * Optional custom series options (colors, borders, wicks).
-   */
   seriesOptions?: CandlestickSeriesPartialOptions;
-
-  /**
-   * Active indicators list to plot on chart
-   */
   indicators?: IndicatorConfig[];
-
-  /**
-   * Height in pixels or percentage CSS string (e.g. "100%").
-   */
   height?: number | string;
-
-  /**
-   * Optional CSS class name.
-   */
   className?: string;
-
-  /**
-   * Optional inline style.
-   */
   style?: React.CSSProperties;
-
-  /**
-   * Optional callback when chart instance and series are initialized.
-   */
   onChartReady?: (handle: ChartImperativeHandle) => void;
-
-  /**
-   * Optional callback when user right-clicks on chart canvas.
-   */
   onContextMenu?: (e: React.MouseEvent) => void;
-
-  /**
-   * Optional callback when user clicks or double-clicks on an indicator to open its settings.
-   */
   onOpenIndicatorSettings?: (indicatorId?: string) => void;
-
-  /**
-   * Official Closing Auction Session (CAS) price for the active symbol.
-   * Rendered as an official reference line on small timeframe charts.
-   */
+  onToggleIndicatorVisibility?: (indicatorIds: string[]) => void;
+  onBarUpdate?: (candles: CandlestickData<Time>[]) => void;
   casPrice?: number;
-
-  /**
-   * Current active chart resolution/timeframe (e.g. '15m', '1D').
-   */
   timeframe?: string;
 }
 
-export type IndicatorType = 'OR' | 'VWAP' | 'EMA' | 'SMA' | 'VOLUME';
+export type IndicatorType = 'OR' | 'VWAP' | 'EMA' | 'SMA' | 'VOLUME' | 'RSI' | 'ADX';
 
 export interface IndicatorConfig {
   id: string;
@@ -178,17 +123,22 @@ export interface IndicatorConfig {
   color: string;
   lineWidth?: 1 | 2 | 3 | 4;
   options: {
-    durationMinutes?: number; // OR opening duration in mins (default: 60 for 1H)
+    durationMinutes?: number;
     highColor?: string;
     lowColor?: string;
     showMid?: boolean;
     midColor?: string;
-    period?: number; // For EMA / SMA
-    sessionSpecific?: boolean; // For VWAP (true: resets at session start 09:15 IST, false: continuous)
-    volumeStyle?: 'area' | 'bar'; // For Volume Overlay: 'area' (default) or 'bar'
-    volumeColor?: string; // Base / single color for volume (default: '#808080' grey)
+    period?: number;
+    sessionSpecific?: boolean;
+    volumeStyle?: 'area' | 'bar';
+    volumeColor?: string;
     colorUp?: string;
     colorDown?: string;
+    rsiOverbought?: number;
+    rsiOversold?: number;
+    showDI?: boolean;
+    plusDiColor?: string;
+    minusDiColor?: string;
   };
 }
 
@@ -197,15 +147,15 @@ export const DEFAULT_INDICATORS: IndicatorConfig[] = [
     id: 'indicator-or-1h',
     type: 'OR',
     name: 'Opening Range Breakout',
-    shortName: 'OR 1H',
+    shortName: 'OR',
     enabled: false,
     visible: true,
-    color: '#38bdf8', // Sky blue default
+    color: '#38bdf8',
     lineWidth: 2,
     options: {
       durationMinutes: 60,
-      highColor: '#38bdf8', // Sky blue
-      lowColor: '#38bdf8',  // Sky blue
+      highColor: '#38bdf8',
+      lowColor: '#38bdf8',
       showMid: false,
       midColor: 'rgba(56, 189, 248, 0.45)'
     }
@@ -224,29 +174,29 @@ export const DEFAULT_INDICATORS: IndicatorConfig[] = [
     }
   },
   {
-    id: 'indicator-ema-20',
+    id: 'indicator-ema-1',
     type: 'EMA',
     name: 'Exponential Moving Average',
-    shortName: 'EMA 20',
+    shortName: 'EMA 10',
     enabled: false,
     visible: true,
-    color: '#a855f7',
+    color: MA_DEFAULT_COLORS[0],
     lineWidth: 1,
     options: {
-      period: 20
+      period: 10
     }
   },
   {
-    id: 'indicator-sma-50',
+    id: 'indicator-sma-1',
     type: 'SMA',
     name: 'Simple Moving Average',
-    shortName: 'SMA 50',
+    shortName: 'SMA 20',
     enabled: false,
     visible: true,
-    color: '#10b981',
+    color: MA_DEFAULT_COLORS[6],
     lineWidth: 1,
     options: {
-      period: 50
+      period: 20
     }
   },
   {
@@ -256,12 +206,43 @@ export const DEFAULT_INDICATORS: IndicatorConfig[] = [
     shortName: 'VOL',
     enabled: false,
     visible: true,
-    color: '#808080', // Grey default
+    color: '#808080',
     options: {
-      volumeStyle: 'area', // Area chart default
-      volumeColor: '#808080', // Grey default
+      volumeStyle: 'area',
+      volumeColor: '#808080',
       colorUp: '#808080',
       colorDown: '#555555'
+    }
+  },
+  {
+    id: 'indicator-rsi',
+    type: 'RSI',
+    name: 'Relative Strength Index',
+    shortName: 'RSI',
+    enabled: false,
+    visible: true,
+    color: '#a855f7',
+    lineWidth: 2,
+    options: {
+      period: 14,
+      rsiOverbought: 70,
+      rsiOversold: 30
+    }
+  },
+  {
+    id: 'indicator-adx',
+    type: 'ADX',
+    name: 'Average Directional Index',
+    shortName: 'ADX',
+    enabled: false,
+    visible: true,
+    color: '#eab308',
+    lineWidth: 2,
+    options: {
+      period: 14,
+      showDI: true,
+      plusDiColor: '#22c55e',
+      minusDiColor: '#ef4444'
     }
   }
 ];

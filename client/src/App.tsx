@@ -37,7 +37,9 @@ import {
   OptionChainWidget,
   NiftyHeatmap,
   WatchlistDrawer,
+  buildWatchlistItemsForSegment,
   WatchlistMode,
+  WatchlistSegment,
   SymbolSearchModal,
   NIFTY_50_CONSTITUENTS,
   NIFTY_INDICES
@@ -46,6 +48,7 @@ import { SettingsModal } from './components/dashboard/SettingsModal';
 import logoImg from './assets/logo.png';
 
 type AppPage = 'dashboard' | 'chart' | 'heatmap';
+const PAGE_ORDER: AppPage[] = ['dashboard', 'chart', 'heatmap'];
 
 const ALL_TIMEFRAMES = [
   { label: '1m', value: '1m' },
@@ -58,19 +61,25 @@ const ALL_TIMEFRAMES = [
   { label: '1H', value: '1H' },
   { label: '2H', value: '2H' },
   { label: '4H', value: '4H' },
-  { label: '1D', value: '1D' }
+  { label: '1D', value: '1D' },
+  { label: '1W', value: '1W' },
+  { label: '1M', value: '1M' }
 ];
 
 const DEFAULT_PINNED = ['1m', '5m', '15m', '1H', '1D'];
 
 export function App() {
   const [activePage, setActivePage] = useState<AppPage>('dashboard');
+  const prevPageRef = useRef<AppPage>('dashboard');
   const [healthStatus, setHealthStatus] = useState<'online' | 'offline' | 'loading'>('loading');
   const [wsStatus, setWsStatus] = useState<'online' | 'offline' | 'loading'>('loading');
   const [isBrokerConnected, setIsBrokerConnected] = useState<boolean>(false);
   const [hasBrokerStatusLoaded, setHasBrokerStatusLoaded] = useState<boolean>(false);
+  const [feedStatus, setFeedStatus] = useState<'LIVE' | 'RATE_LIMITED' | 'STALE' | 'PUBLIC' | 'OFFLINE'>('PUBLIC');
   const [dataSource, setDataSource] = useState<'FYERS' | 'PUBLIC'>('PUBLIC');
-  const [activeTimeFilter, setActiveTimeFilter] = useState<string>('15m');
+  const [activeTimeFilter, setActiveTimeFilter] = useState<string>('5m');
+  const activeTimeFilterRef = useRef<string>('5m');
+  activeTimeFilterRef.current = activeTimeFilter;
   const [isChartLoading, setIsChartLoading] = useState<boolean>(false);
   const [chartNotice, setChartNotice] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
@@ -101,8 +110,9 @@ export function App() {
     }
   }, []);
 
-  // Market session status (Markets Live / Markets Closed / Holiday / Pre / Post)
+  // Market session status & live IST header clock (ticks every second)
   const [sessionInfo, setSessionInfo] = useState<MarketSessionInfo>(getMarketSessionInfo);
+  const [currentClock, setCurrentClock] = useState<Date>(() => new Date());
 
   // Highlight Window Custom Symbols (persisted across sessions)
   const [highlightSymbols, setHighlightSymbols] = useState<string[]>(() => {
@@ -139,6 +149,7 @@ export function App() {
   const handleToggleHighlightSymbol = (symbol: string) => {
     setHighlightSymbols((prev) => {
       const exists = prev.some((s) => s.toUpperCase() === symbol.toUpperCase());
+      if (!exists) requestOnDemandQuotes([symbol]);
       const updated = exists
         ? prev.filter((s) => s.toUpperCase() !== symbol.toUpperCase())
         : [...prev, symbol];
@@ -149,11 +160,20 @@ export function App() {
     });
   };
 
-  // Technical Indicators State
+  // Technical Indicators State (Supports up to 8 EMAs, 8 SMAs, RSI, ADX, OR, VWAP, VOL)
   const [indicators, setIndicators] = useState<IndicatorConfig[]>(() => {
     try {
-      const saved = localStorage.getItem('pm_vision_indicators_v2');
-      return saved ? JSON.parse(saved) : DEFAULT_INDICATORS;
+      const savedV3 = localStorage.getItem('pm_vision_indicators_v3');
+      if (savedV3) {
+        const parsed = JSON.parse(savedV3) as IndicatorConfig[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Ensure newly added default studies (like RSI/ADX) exist cleanly if migrating
+          const ids = new Set(parsed.map((i) => i.id));
+          const missing = DEFAULT_INDICATORS.filter((d) => d.type !== 'EMA' && d.type !== 'SMA' && !ids.has(d.id));
+          return [...parsed, ...missing];
+        }
+      }
+      return DEFAULT_INDICATORS;
     } catch {
       return DEFAULT_INDICATORS;
     }
@@ -164,23 +184,56 @@ export function App() {
   const handleUpdateIndicators = (newIndicators: IndicatorConfig[]) => {
     setIndicators(newIndicators);
     try {
-      localStorage.setItem('pm_vision_indicators_v2', JSON.stringify(newIndicators));
+      localStorage.setItem('pm_vision_indicators_v3', JSON.stringify(newIndicators));
     } catch {}
   };
 
   const handleResetIndicators = () => {
     setIndicators(DEFAULT_INDICATORS);
     try {
-      localStorage.removeItem('pm_vision_indicators_v2');
+      localStorage.removeItem('pm_vision_indicators_v3');
     } catch {}
   };
 
-  // Watchlist State (Non-overlay inline panel inside chart workspace)
+  const handleToggleIndicatorVisibility = useCallback((ids: string[]) => {
+    setIndicators((prev) => {
+      const idSet = new Set(ids);
+      const targets = prev.filter((i) => idSet.has(i.id));
+      const allHidden = targets.every((i) => !i.visible);
+      const next = prev.map((ind) => (idSet.has(ind.id) ? { ...ind, visible: allHidden } : ind));
+      try {
+        localStorage.setItem('pm_vision_indicators_v3', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  }, []);
+
+  // Watchlist State (Default: NSE Major Indices)
+  const [defaultWatchlist, setDefaultWatchlist] = useState<WatchlistSegment>(() => {
+    try {
+      const saved = localStorage.getItem('pm_vision_default_watchlist') as WatchlistSegment | null;
+      return saved || 'major_indices';
+    } catch {
+      return 'major_indices';
+    }
+  });
+  const [watchlistSegment, setWatchlistSegment] = useState<WatchlistSegment>(defaultWatchlist);
   const [isWatchlistOpen, setIsWatchlistOpen] = useState<boolean>(false);
+  const [isWatchlistDropdownOpen, setIsWatchlistDropdownOpen] = useState<boolean>(false);
   const [watchlistMode, setWatchlistMode] = useState<WatchlistMode>('docked');
+  const [focusContext, setFocusContext] = useState<'chart' | 'watchlist'>('watchlist');
+
+  const handleChangeDefaultWatchlist = (seg: WatchlistSegment) => {
+    setDefaultWatchlist(seg);
+    setWatchlistSegment(seg);
+    try {
+      localStorage.setItem('pm_vision_default_watchlist', seg);
+    } catch {}
+  };
 
   // Symbol Search State
   const [isSymbolSearchOpen, setIsSymbolSearchOpen] = useState<boolean>(false);
+  const [searchInitialQuery, setSearchInitialQuery] = useState<string>('');
   const [activeChartSymbol, setActiveChartSymbol] = useState<string>('NIFTY 50');
   const [activeChartSymbolName, setActiveChartSymbolName] = useState<string>('Nifty 50 Index');
   const [activeChartSymbolSector, setActiveChartSymbolSector] = useState<string>('INDEX');
@@ -193,7 +246,7 @@ export function App() {
     setActiveChartSymbolName(name);
     setActiveChartSymbolSector(sector);
     activeChartSymbolRef.current = symbol;
-    loadHistory(activeTimeFilter, symbol);
+    loadHistory(activeTimeFilterRef.current, symbol);
   };
 
   // Candlestick Appearance Customization
@@ -228,7 +281,7 @@ export function App() {
   });
   const [showTfDropdown, setShowTfDropdown] = useState<boolean>(false);
   const [customValue, setCustomValue] = useState<string>('3');
-  const [customUnit, setCustomUnit] = useState<'m' | 'H' | 'D'>('m');
+  const [customUnit, setCustomUnit] = useState<'m' | 'H' | 'D' | 'W' | 'M'>('m');
 
   // Real-Time Streaming State
   const [securities, setSecurities] = useState<SecurityQuote[]>([]);
@@ -334,66 +387,79 @@ export function App() {
     return found?.basePrice || 0;
   }, [activeChartSymbol, spotPrice, mergedSecurities, chartCandles]);
 
-  const loadHistory = useCallback(async (resolution: string, symbol?: string) => {
-    const targetSymbol = symbol || activeChartSymbolRef.current;
-    setIsChartLoading(true);
-    setChartNotice(null);
-    try {
-      const historyRes = await fetchMarketHistoryDetailed(resolution, targetSymbol);
-      const candles = historyRes.candles;
-
-      if (typeof historyRes.isBrokerConnected === 'boolean') {
-        setIsBrokerConnected(historyRes.isBrokerConnected);
-        setHasBrokerStatusLoaded(true);
-      }
-      if (historyRes.source) {
-        setDataSource(historyRes.source);
-      }
-      if (targetSymbol === 'NIFTY 50' && historyRes.casPrice && historyRes.casPrice > 0) {
-        setSpotPrice(historyRes.casPrice);
-      }
-
-      if (candles && candles.length > 0) {
-        if (targetSymbol === 'NIFTY 50') {
-          baseHistoryRef.current = candles as any;
-        }
+  const loadHistory = useCallback(
+    async (resolution: string, symbol?: string, opts?: { preserveView?: boolean; silent?: boolean }) => {
+      const targetSymbol = symbol || activeChartSymbolRef.current;
+      if (!opts?.silent) {
+        setIsChartLoading(true);
         setChartNotice(null);
-        setChartCandles(candles as any);
-        chartRef.current?.setData(candles as any);
-      } else if (historyRes.requiresBroker) {
-        setChartNotice(`${targetSymbol} futures chart requires an active FYERS connection. Connect FYERS in Settings.`);
-        setChartCandles([]);
-        chartRef.current?.setData([]);
-      } else {
-        // Emergency offline fallback only if upstream returns empty for cash equities/indices
-        const found = [...NIFTY_50_CONSTITUENTS, ...NIFTY_INDICES].find((i) => i.symbol === targetSymbol);
-        const targetPrice = found?.basePrice || (targetSymbol === 'NIFTY 50' ? 25819.25 : 1000);
-        const ratio = targetPrice / 25819.25;
-        const base = (baseHistoryRef.current && baseHistoryRef.current.length > 0)
-          ? baseHistoryRef.current
-          : SAMPLE_CANDLESTICK_DATA;
-        const scaled = base.map((c) => ({
-          time: c.time,
-          open: parseFloat((c.open * ratio).toFixed(2)),
-          high: parseFloat((c.high * ratio).toFixed(2)),
-          low: parseFloat((c.low * ratio).toFixed(2)),
-          close: parseFloat((c.close * ratio).toFixed(2)),
-          volume: (c as any).volume
-        }));
-        setChartCandles(scaled as any);
-        chartRef.current?.setData(scaled as any);
       }
-    } catch (err) {
-      console.error('Failed to load market history:', err);
-    } finally {
-      setIsChartLoading(false);
-    }
-  }, []);
+      try {
+        const historyRes = await fetchMarketHistoryDetailed(resolution, targetSymbol);
+        const candles = historyRes.candles;
 
-  const handleTimeframeChange = (tf: string) => {
+        if (typeof historyRes.isBrokerConnected === 'boolean') {
+          setIsBrokerConnected(historyRes.isBrokerConnected);
+          setHasBrokerStatusLoaded(true);
+        }
+        if (historyRes.source) {
+          setDataSource(historyRes.source);
+        }
+        if (targetSymbol === 'NIFTY 50' && historyRes.casPrice && historyRes.casPrice > 0) {
+          setSpotPrice(historyRes.casPrice);
+        }
+
+        if (candles && candles.length > 0) {
+          if (targetSymbol === 'NIFTY 50') {
+            baseHistoryRef.current = candles as any;
+          }
+          setChartNotice(null);
+          if (opts?.preserveView && chartRef.current) {
+            chartRef.current.setData(candles as any, true);
+          } else {
+            setChartCandles(candles as any);
+            chartRef.current?.setData(candles as any, false);
+          }
+        } else if (historyRes.requiresBroker) {
+          setChartNotice(`${targetSymbol} futures chart requires an active Data Feed connection. Connect Data Feed in Settings.`);
+          setChartCandles([]);
+          chartRef.current?.setData([], false);
+        } else {
+          // Emergency offline fallback only if upstream returns empty for cash equities/indices
+          const found = [...NIFTY_50_CONSTITUENTS, ...NIFTY_INDICES].find((i) => i.symbol === targetSymbol);
+          const targetPrice = found?.basePrice || (targetSymbol === 'NIFTY 50' ? 25819.25 : 1000);
+          const ratio = targetPrice / 25819.25;
+          const base =
+            baseHistoryRef.current && baseHistoryRef.current.length > 0
+              ? baseHistoryRef.current
+              : SAMPLE_CANDLESTICK_DATA;
+          const scaled = base.map((c) => ({
+            time: c.time,
+            open: parseFloat((c.open * ratio).toFixed(2)),
+            high: parseFloat((c.high * ratio).toFixed(2)),
+            low: parseFloat((c.low * ratio).toFixed(2)),
+            close: parseFloat((c.close * ratio).toFixed(2)),
+            volume: (c as any).volume
+          }));
+          setChartCandles(scaled as any);
+          chartRef.current?.setData(scaled as any, Boolean(opts?.preserveView));
+        }
+      } catch (err) {
+        console.error('Failed to load market history:', err);
+      } finally {
+        if (!opts?.silent) {
+          setIsChartLoading(false);
+        }
+      }
+    },
+    []
+  );
+
+  const handleTimeframeChange = useCallback((tf: string) => {
     setActiveTimeFilter(tf);
-    loadHistory(tf, activeChartSymbol);
-  };
+    activeTimeFilterRef.current = tf;
+    loadHistory(tf, activeChartSymbolRef.current);
+  }, [loadHistory]);
 
   const togglePin = (tf: string) => {
     const updated = pinnedTimeframes.includes(tf)
@@ -469,7 +535,94 @@ export function App() {
     return () => window.removeEventListener('click', handleWindowClick);
   }, []);
 
-  // TradingView-style direct keyboard interval jump
+  const watchlistOrderedSymbols = useMemo(
+    () => buildWatchlistItemsForSegment(watchlistSegment, catalog).map((item) => item.symbol),
+    [watchlistSegment, catalog]
+  );
+
+  const stepWatchlistSymbol = useCallback(
+    (delta: number) => {
+      if (!watchlistOrderedSymbols || watchlistOrderedSymbols.length === 0) return;
+      const curIdx = watchlistOrderedSymbols.findIndex(
+        (s) => s.toUpperCase() === activeChartSymbolRef.current.toUpperCase()
+      );
+      let nextIdx = 0;
+      if (curIdx === -1) {
+        nextIdx = delta >= 0 ? 0 : watchlistOrderedSymbols.length - 1;
+      } else {
+        nextIdx = (curIdx + delta + watchlistOrderedSymbols.length) % watchlistOrderedSymbols.length;
+      }
+      const nextSym = watchlistOrderedSymbols[nextIdx];
+      if (nextSym) {
+        const meta = resolveSymbolMeta(nextSym);
+        handleSelectSymbol(meta.symbol, meta.name, meta.sector, meta.basePrice);
+      }
+    },
+    [watchlistOrderedSymbols, resolveSymbolMeta]
+  );
+
+  const parseIntervalBufferToTimeframe = (raw: string): string | null => {
+    const buf = raw.trim();
+    if (!buf) return null;
+    if (/^\d+M$/.test(buf)) return '1M';
+    if (/^\d+[wW]$/.test(buf)) return '1W';
+    if (/^\d+[dD]$/.test(buf)) return '1D';
+    if (/^\d+[hH]$/.test(buf)) {
+      const h = parseInt(buf.slice(0, -1), 10);
+      if (h === 1) return '1H';
+      if (h === 2) return '2H';
+      if (h === 4) return '4H';
+      const mins = h * 60;
+      if (mins > 40000) return '1M';
+      if (mins > 2000) return '1W';
+      if (mins > 385) return '1D';
+      return `${h}H`;
+    }
+    const minsMatch = buf.match(/^(\d+)m?$/);
+    if (!minsMatch) return null;
+    const num = parseInt(minsMatch[1], 10);
+    if (!num || num <= 0) return null;
+    if (num > 40000) return '1M';
+    if (num > 2000) return '1W';
+    if (num > 385) return '1D';
+    if (num === 60) return '1H';
+    if (num === 120) return '2H';
+    if (num === 240) return '4H';
+    return `${num}m`;
+  };
+
+  // Resync candles seamlessly when returning from Heatmap or waking browser tab
+  useEffect(() => {
+    const prev = prevPageRef.current;
+    prevPageRef.current = activePage;
+    if (prev === 'heatmap' && activePage !== 'heatmap') {
+      loadHistory(activeTimeFilterRef.current, activeChartSymbolRef.current, {
+        preserveView: true,
+        silent: true
+      });
+    }
+  }, [activePage, loadHistory]);
+
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        loadHistory(activeTimeFilterRef.current, activeChartSymbolRef.current, {
+          preserveView: true,
+          silent: true
+        });
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [loadHistory]);
+
+  // Live 1s header clock
+  useEffect(() => {
+    const clockTimer = setInterval(() => setCurrentClock(new Date()), 1000);
+    return () => clearInterval(clockTimer);
+  }, []);
+
+  // Global & TradingView-style Chart / Watchlist Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -485,59 +638,161 @@ export function App() {
 
       if (isSettingsOpen || isIndicatorsOpen || isSymbolSearchOpen) return;
 
-      // Ctrl+K or / to open Symbol Search (TradingView standard)
+      // Global Tab Switching: PageDown / PageUp (Dashboard <-> Chart <-> Heatmap)
+      if (e.key === 'PageDown' || e.key === 'PageUp') {
+        e.preventDefault();
+        setActivePage((prev) => {
+          const idx = PAGE_ORDER.indexOf(prev);
+          const step = e.key === 'PageDown' ? 1 : -1;
+          return PAGE_ORDER[(idx + step + PAGE_ORDER.length) % PAGE_ORDER.length];
+        });
+        return;
+      }
+
+      // If Watchlist segment dropdown is open (Alt+Q), WatchlistDrawer handles Up/Down/Enter/Alt+Q
+      if (isWatchlistOpen && isWatchlistDropdownOpen) {
+        return;
+      }
+
+      // Alt+W: Toggle Watchlist on chart tabs (Dashboard & Chart)
+      if (e.altKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === 'w') {
+        if (activePage !== 'heatmap') {
+          e.preventDefault();
+          setIsWatchlistDropdownOpen(false);
+          setIsWatchlistOpen((prev) => {
+            if (!prev) setWatchlistMode('docked');
+            return !prev;
+          });
+          setFocusContext('watchlist');
+        }
+        return;
+      }
+
+      // Alt+Q: Open/close Watchlist selector dropdown when Watchlist is open
+      if (e.altKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === 'q') {
+        if (activePage !== 'heatmap' && isWatchlistOpen) {
+          e.preventDefault();
+          setIsWatchlistDropdownOpen((prev) => !prev);
+        }
+        return;
+      }
+
+      // Alt+R: Reset chart view
+      if (e.altKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === 'r') {
+        if (activePage !== 'heatmap') {
+          e.preventDefault();
+          chartRef.current?.fitContent();
+        }
+        return;
+      }
+
+      // Ctrl+K or / to open Symbol Search
       if (((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') || e.key === '/') {
         e.preventDefault();
+        setSearchInitialQuery('');
         setIsSymbolSearchOpen(true);
         return;
       }
 
-      if (!keyIntervalVisible) {
-        if (e.key >= '1' && e.key <= '9') {
+      // Direct Timeframe Buffer Input
+      if (keyIntervalVisible) {
+        if (e.key >= '0' && e.key <= '9' && !/[a-zA-Z]$/.test(keyIntervalBuffer)) {
           e.preventDefault();
-          setKeyIntervalBuffer(e.key);
-          setKeyIntervalVisible(true);
+          setKeyIntervalBuffer((prev) => (prev.length < 6 ? prev + e.key : prev));
+        } else if (
+          (e.key === 'm' || e.key === 'M' || e.key === 'h' || e.key === 'H' || e.key === 'd' || e.key === 'D' || e.key === 'w' || e.key === 'W') &&
+          !e.ctrlKey &&
+          !e.altKey &&
+          !e.metaKey &&
+          /^\d+$/.test(keyIntervalBuffer)
+        ) {
+          e.preventDefault();
+          // Preserve uppercase 'M' for Month vs lowercase 'm' for Minute
+          setKeyIntervalBuffer((prev) => `${prev}${e.key}`);
+        } else if (e.key === 'Backspace') {
+          e.preventDefault();
+          setKeyIntervalBuffer((prev) => {
+            const next = prev.slice(0, -1);
+            if (next.length === 0) setKeyIntervalVisible(false);
+            return next;
+          });
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          const parsedTf = parseIntervalBufferToTimeframe(keyIntervalBuffer);
+          if (parsedTf) {
+            handleTimeframeChange(parsedTf);
+          }
+          setKeyIntervalVisible(false);
+          setKeyIntervalBuffer('');
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          setKeyIntervalVisible(false);
+          setKeyIntervalBuffer('');
+        } else {
+          setKeyIntervalVisible(false);
+          setKeyIntervalBuffer('');
         }
         return;
       }
 
-      // Interval buffer is active
-      if (e.key >= '0' && e.key <= '9') {
+      // Start timeframe buffer with digits 1-9 (only when Chart visible)
+      if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key >= '1' && e.key <= '9' && activePage !== 'heatmap') {
         e.preventDefault();
-        setKeyIntervalBuffer((prev) => (prev.length < 4 ? prev + e.key : prev));
-      } else if (e.key === 'Backspace') {
-        e.preventDefault();
-        setKeyIntervalBuffer((prev) => {
-          const next = prev.slice(0, -1);
-          if (next.length === 0) {
-            setKeyIntervalVisible(false);
-          }
-          return next;
-        });
-      } else if (e.key === 'Enter') {
-        e.preventDefault();
-        if (keyIntervalBuffer) {
-          const num = parseInt(keyIntervalBuffer, 10);
-          if (num > 0) {
-            let targetTf = `${num}m`;
-            if (num === 60) targetTf = '1H';
-            else if (num === 120) targetTf = '2H';
-            else if (num === 240) targetTf = '4H';
+        setKeyIntervalBuffer(e.key);
+        setKeyIntervalVisible(true);
+        return;
+      }
 
-            handleTimeframeChange(targetTf);
-          }
+      // Any single alphabet key triggers Search Stock dialog (TradingView style)
+      if (!e.ctrlKey && !e.altKey && !e.metaKey && /^[a-zA-Z]$/.test(e.key)) {
+        e.preventDefault();
+        setSearchInitialQuery(e.key);
+        setIsSymbolSearchOpen(true);
+        return;
+      }
+
+      // Chart Panning & Zooming + Watchlist Stepping
+      if (activePage !== 'heatmap') {
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          chartRef.current?.panByBars(e.ctrlKey || e.metaKey ? -10 : -1);
+          return;
         }
-        setKeyIntervalVisible(false);
-        setKeyIntervalBuffer('');
-      } else {
-        // Any other key or Escape cancels immediately and vanishes
-        setKeyIntervalVisible(false);
-        setKeyIntervalBuffer('');
+        if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          chartRef.current?.panByBars(e.ctrlKey || e.metaKey ? 10 : 1);
+          return;
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          if (e.shiftKey) {
+            chartRef.current?.zoomY(true);
+          } else if (e.ctrlKey || e.metaKey) {
+            chartRef.current?.zoomX(true);
+          } else if (focusContext === 'watchlist') {
+            stepWatchlistSymbol(-1);
+          } else {
+            chartRef.current?.zoomX(true);
+          }
+          return;
+        }
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          if (e.shiftKey) {
+            chartRef.current?.zoomY(false);
+          } else if (e.ctrlKey || e.metaKey) {
+            chartRef.current?.zoomX(false);
+          } else if (focusContext === 'watchlist') {
+            stepWatchlistSymbol(1);
+          } else {
+            chartRef.current?.zoomX(false);
+          }
+          return;
+        }
       }
     };
 
     const handleWindowMouseDown = () => {
-      // Clicking anywhere on the screen cancels immediately
       if (keyIntervalVisible) {
         setKeyIntervalVisible(false);
         setKeyIntervalBuffer('');
@@ -550,16 +805,29 @@ export function App() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('mousedown', handleWindowMouseDown);
     };
-  }, [keyIntervalVisible, keyIntervalBuffer, isSettingsOpen, isIndicatorsOpen, isSymbolSearchOpen, handleTimeframeChange]);
+  }, [
+    keyIntervalVisible,
+    keyIntervalBuffer,
+    isSettingsOpen,
+    isIndicatorsOpen,
+    isSymbolSearchOpen,
+    isWatchlistOpen,
+    isWatchlistDropdownOpen,
+    activePage,
+    focusContext,
+    handleTimeframeChange,
+    stepWatchlistSymbol
+  ]);
 
-  // Check market session & broker status every 15 seconds
+  // Check market session & data feed status every 15 seconds
   useEffect(() => {
     const checkStatus = () => {
       setSessionInfo(getMarketSessionInfo());
       fetchMarketStatus()
-        .then((res: any) => {
+        .then((res) => {
           setIsBrokerConnected(Boolean(res.isBrokerConnected));
           setHasBrokerStatusLoaded(true);
+          if (res.feedStatus) setFeedStatus(res.feedStatus);
           if (res.session) {
             setSessionInfo(res.session);
           }
@@ -577,13 +845,13 @@ export function App() {
       .then(() => setHealthStatus('online'))
       .catch(() => setHealthStatus('offline'));
 
-    // Load full NSE Equity / Index / Futures catalog from FYERS symbol master
+    // Load full NSE Equity / Index / Futures catalog
     fetchInstrumentCatalog()
       .then((cat) => setCatalog(cat))
       .catch(() => {});
 
-    // Load initial real 15m historical candles from FYERS
-    loadHistory('15m');
+    // Default chart timeframe on open: 5m
+    loadHistory('5m');
 
     const client = createWebSocketConnection({
       onOpen: () => setWsStatus('online'),
@@ -604,6 +872,7 @@ export function App() {
               setIsBrokerConnected(data.isBrokerConnected);
               setHasBrokerStatusLoaded(true);
             }
+            if (data.feedStatus) setFeedStatus(data.feedStatus);
             if (data.dataSource) setDataSource(data.dataSource);
 
             // Real-time chart candle updates during genuine open market hours
@@ -708,6 +977,31 @@ export function App() {
     document.body.style.cursor = 'row-resize';
   }, []);
 
+  const niftyHeaderQuote = useMemo(() => {
+    const found = mergedSecurities.find((s) => s.symbol.toUpperCase() === 'NIFTY 50');
+    const ltp = found && found.ltp > 0 ? found.ltp : spotPrice;
+    const change = found ? found.change : 0;
+    const changePct = found ? found.changePct : 0;
+    return { ltp, change, changePct };
+  }, [mergedSecurities, spotPrice]);
+
+  const formattedHeaderClock = useMemo(() => {
+    try {
+      return currentClock.toLocaleString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      });
+    } catch {
+      return currentClock.toLocaleTimeString();
+    }
+  }, [currentClock]);
+
   return (
     <div style={{
       width: '100%',
@@ -743,12 +1037,12 @@ export function App() {
           />
         </div>
 
-        {/* Header Right: Broker Disconnected Error (LHS of Markets status) + Market Status */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+        {/* Header Right: Disconnected Error -> Nifty Index Watch -> Current Date & Time -> NSE Market Status */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
           {hasBrokerStatusLoaded && !isBrokerConnected && (
             <button
               onClick={() => setIsSettingsOpen(true)}
-              title="Open Broker Settings to connect FYERS"
+              title="Open Data Feed Settings"
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -771,9 +1065,65 @@ export function App() {
                   backgroundColor: '#ef4444'
                 }}
               />
-              <span>Couldn't fetch data from Main data source</span>
+              <span>Couldn&apos;t fetch data from Main data source</span>
             </button>
           )}
+
+          {/* Nifty 50 Index Watch */}
+          {niftyHeaderQuote.ltp > 0 && (
+            <button
+              onClick={() => {
+                handleSelectSymbol('NIFTY 50', 'Nifty 50 Index', 'INDEX', niftyHeaderQuote.ltp);
+                if (activePage === 'heatmap') setActivePage('chart');
+              }}
+              title="Click to switch active chart to NIFTY 50"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '7px',
+                fontSize: '0.74rem',
+                padding: '3px 10px',
+                marginRight: '0.35rem',
+                borderRadius: '4px',
+                backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                border: '1px solid #1f1f1f',
+                cursor: 'pointer',
+                color: '#e5e7eb',
+                fontWeight: 600
+              }}
+            >
+              <span style={{ color: '#9ca3af', fontWeight: 700 }}>Nifty</span>
+              <span style={{ color: '#ffffff', fontWeight: 700 }}>
+                {niftyHeaderQuote.ltp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+              <span
+                style={{
+                  color: niftyHeaderQuote.change >= 0 ? '#22c55e' : '#ef4444',
+                  fontWeight: 700
+                }}
+              >
+                {niftyHeaderQuote.change >= 0 ? '+' : ''}
+                {niftyHeaderQuote.change.toFixed(2)} ({niftyHeaderQuote.changePct >= 0 ? '+' : ''}
+                {niftyHeaderQuote.changePct.toFixed(2)}%)
+              </span>
+            </button>
+          )}
+
+          {/* Current Date & Time (IST) */}
+          <div
+            style={{
+              fontSize: '0.72rem',
+              color: '#a3a3a3',
+              fontWeight: 600,
+              padding: '3px 8px',
+              borderRadius: '4px',
+              backgroundColor: 'rgba(255, 255, 255, 0.02)',
+              border: '1px solid #1a1a1a',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            {formattedHeaderClock} IST
+          </div>
 
           {/* Domestic Market Status */}
           <div style={{
@@ -802,9 +1152,16 @@ export function App() {
 
       {/* Main Workspace with Navigation Rail shifted to Right */}
       <div style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>
-        {/* Content Area */}
-        {activePage !== 'heatmap' ? (
-          <>
+        {/* Content Area: Keep Chart Workspace mounted (hidden via display:none in Heatmap mode so candles keep syncing seamlessly) */}
+        <div
+          style={{
+            flex: 1,
+            display: activePage !== 'heatmap' ? 'flex' : 'none',
+            minWidth: 0,
+            minHeight: 0,
+            position: 'relative'
+          }}
+        >
             {/* Left Area (or Full Workspace in 'chart' view): Candlestick Chart */}
             <div style={{
               flex: 1,
@@ -957,6 +1314,45 @@ export function App() {
                     </button>
                   </div>
 
+                  {/* Indicators Button (Positioned immediately on RHS of Timeframes bar) */}
+                  <button
+                    onClick={() => setIsIndicatorsOpen(true)}
+                    title="Add or manage technical indicators (OR, VWAP, EMA, SMA, Volume, RSI, ADX)"
+                    style={{
+                      padding: '2px 8px',
+                      fontSize: '0.70rem',
+                      backgroundColor: indicators.some((ind) => ind.enabled) ? 'rgba(95, 122, 154, 0.2)' : '#121212',
+                      border: `1px solid ${indicators.some((ind) => ind.enabled) ? '#5F7A9A' : '#262626'}`,
+                      color: indicators.some((ind) => ind.enabled) ? '#5F7A9A' : '#e5e7eb',
+                      borderRadius: '3px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      fontWeight: 600
+                    }}
+                  >
+                    <span style={{ fontStyle: 'italic', color: '#5F7A9A', fontWeight: 700 }}>fx</span>
+                    <span>Indicators</span>
+                    {indicators.filter((ind) => ind.enabled).length > 0 && (
+                      <span
+                        style={{
+                          fontSize: '0.58rem',
+                          backgroundColor: '#5F7A9A',
+                          color: '#ffffff',
+                          borderRadius: '50%',
+                          width: '13px',
+                          height: '13px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                      >
+                        {indicators.filter((ind) => ind.enabled).length}
+                      </span>
+                    )}
+                  </button>
+
                   {/* Loading indicator */}
                   {isChartLoading && (
                     <span style={{ fontSize: '0.68rem', color: '#5F7A9A', fontStyle: 'italic' }}>
@@ -1073,6 +1469,8 @@ export function App() {
                             <option value="m">Minute(s)</option>
                             <option value="H">Hour(s)</option>
                             <option value="D">Day(s)</option>
+                            <option value="W">Week(s)</option>
+                            <option value="M">Month(s)</option>
                           </select>
                           <button
                             onClick={handleAddCustom}
@@ -1101,12 +1499,14 @@ export function App() {
                     onClick={() => {
                       if (isWatchlistOpen) {
                         setIsWatchlistOpen(false);
+                        setIsWatchlistDropdownOpen(false);
                       } else {
                         setWatchlistMode('docked');
                         setIsWatchlistOpen(true);
+                        setFocusContext('watchlist');
                       }
                     }}
-                    title="Toggle Watchlist Panel inside Chart (NIFTY 50 & Indices)"
+                    title="Toggle Watchlist Panel inside Chart (Alt+W)"
                     style={{
                       padding: '2px 8px',
                       fontSize: '0.70rem',
@@ -1131,45 +1531,6 @@ export function App() {
                     </svg>
                     <span>Watchlist</span>
                   </button>
-
-                  {/* Indicators Button */}
-                  <button
-                    onClick={() => setIsIndicatorsOpen(true)}
-                    title="Add or manage technical indicators (OR 1H, VWAP, EMA, SMA, Volume)"
-                    style={{
-                      padding: '2px 8px',
-                      fontSize: '0.70rem',
-                      backgroundColor: indicators.some((ind) => ind.enabled) ? 'rgba(95, 122, 154, 0.2)' : '#121212',
-                      border: `1px solid ${indicators.some((ind) => ind.enabled) ? '#5F7A9A' : '#262626'}`,
-                      color: indicators.some((ind) => ind.enabled) ? '#5F7A9A' : '#e5e7eb',
-                      borderRadius: '3px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      fontWeight: 600
-                    }}
-                  >
-                    <span style={{ fontStyle: 'italic', fontFamily: 'serif', color: '#5F7A9A' }}>fx</span>
-                    <span>Indicators</span>
-                    {indicators.filter((ind) => ind.enabled).length > 0 && (
-                      <span
-                        style={{
-                          fontSize: '0.58rem',
-                          backgroundColor: '#5F7A9A',
-                          color: '#ffffff',
-                          borderRadius: '50%',
-                          width: '13px',
-                          height: '13px',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center'
-                        }}
-                      >
-                        {indicators.filter((ind) => ind.enabled).length}
-                      </span>
-                    )}
-                  </button>
                 </div>
               </div>
 
@@ -1177,6 +1538,7 @@ export function App() {
               <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden', position: 'relative' }}>
                 {/* Main Visual Display: Candlestick Chart */}
                 <div
+                  onMouseDown={() => setFocusContext('chart')}
                   onContextMenu={handleChartContextMenu}
                   style={{ flex: 1, position: 'relative', minWidth: 0, minHeight: 0 }}
                 >
@@ -1188,6 +1550,7 @@ export function App() {
                     indicators={indicators}
                     height="100%"
                     style={{ height: '100%' }}
+                    onToggleIndicatorVisibility={handleToggleIndicatorVisibility}
                     onOpenIndicatorSettings={(id) => {
                       setSelectedIndicatorId(id || null);
                       setIsIndicatorsOpen(true);
@@ -1236,7 +1599,7 @@ export function App() {
                           cursor: 'pointer'
                         }}
                       >
-                        Connect FYERS in Settings
+                        Connect Data Feed in Settings
                       </button>
                     </div>
                   )}
@@ -1270,7 +1633,7 @@ export function App() {
                         lineHeight: 1,
                         letterSpacing: '0.02em'
                       }}>
-                        {keyIntervalBuffer}m
+                        {keyIntervalBuffer}
                       </div>
                       <div style={{
                         fontSize: '0.72rem',
@@ -1279,7 +1642,7 @@ export function App() {
                         letterSpacing: '0.04em',
                         fontWeight: 500
                       }}>
-                        Press Enter to apply · Esc to cancel
+                        {(parseIntervalBufferToTimeframe(keyIntervalBuffer) || keyIntervalBuffer) + ' · Press Enter to apply · Esc to cancel'}
                       </div>
                     </div>
                   )}
@@ -1306,8 +1669,19 @@ export function App() {
                       onChangeMode={(m) => setWatchlistMode(m)}
                       onClose={() => {
                         setIsWatchlistOpen(false);
+                        setIsWatchlistDropdownOpen(false);
                         setWatchlistMode('docked');
                       }}
+                      segment={watchlistSegment}
+                      onChangeSegment={(seg) => {
+                        setWatchlistSegment(seg);
+                        setFocusContext('watchlist');
+                      }}
+                      isSegmentMenuOpen={isWatchlistDropdownOpen}
+                      onToggleSegmentMenu={(open) =>
+                        setIsWatchlistDropdownOpen((prev) => (typeof open === 'boolean' ? open : !prev))
+                      }
+                      onEngageWatchlist={() => setFocusContext('watchlist')}
                       securities={mergedSecurities}
                       catalog={catalog}
                       activeSymbol={activeChartSymbol}
@@ -1472,9 +1846,10 @@ export function App() {
                 </div>
               </>
             )}
-          </>
-        ) : (
-          /* DEDICATED FULL-PAGE VIEW: Nifty 50 Treemap Heatmap */
+        </div>
+
+        {/* DEDICATED FULL-PAGE VIEW: Nifty 50 Treemap Heatmap */}
+        {activePage === 'heatmap' && (
           <div style={{
             flex: 1,
             height: '100%',
@@ -1482,7 +1857,15 @@ export function App() {
             display: 'flex',
             flexDirection: 'column'
           }}>
-            <NiftyHeatmap />
+            <NiftyHeatmap
+              securities={mergedSecurities}
+              onSelectConstituent={(constituent) => {
+                const meta = resolveSymbolMeta(constituent.symbol);
+                handleSelectSymbol(meta.symbol, meta.name, meta.sector, meta.basePrice);
+                setActivePage('chart');
+              }}
+              onClose={() => setActivePage('dashboard')}
+            />
           </div>
         )}
 
@@ -1675,7 +2058,11 @@ export function App() {
       {/* ===================== SYMBOL SEARCH MODAL ===================== */}
       <SymbolSearchModal
         isOpen={isSymbolSearchOpen}
-        onClose={() => setIsSymbolSearchOpen(false)}
+        onClose={() => {
+          setIsSymbolSearchOpen(false);
+          setSearchInitialQuery('');
+        }}
+        initialQuery={searchInitialQuery}
         onSelectSymbol={handleSelectSymbol}
         activeSymbol={activeChartSymbol}
         catalog={catalog}
@@ -1703,13 +2090,17 @@ export function App() {
         candleColors={candleColors}
         onUpdateCandleColors={handleUpdateCandleColors}
         onResetCandleColors={handleResetCandleColors}
+        defaultWatchlist={defaultWatchlist}
+        onChangeDefaultWatchlist={handleChangeDefaultWatchlist}
         apiStatus={healthStatus}
         wsStatus={wsStatus}
         isBrokerConnected={isBrokerConnected}
+        feedStatus={feedStatus}
         dataSource={dataSource}
         onBrokerConnected={() => {
           setIsBrokerConnected(true);
           setHasBrokerStatusLoaded(true);
+          setFeedStatus('LIVE');
           setDataSource('FYERS');
           setChartNotice(null);
           loadHistory(activeTimeFilter);

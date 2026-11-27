@@ -96,7 +96,7 @@ export const TradingViewColorPicker: React.FC<TradingViewColorPickerProps> = ({
             flexShrink: 0
           }}
         />
-        <span style={{ fontSize: '0.68rem', fontFamily: 'monospace', color: '#CCCCCC', letterSpacing: '0.04em' }}>
+        <span style={{ fontSize: '0.68rem', fontFamily: 'Quicksand, sans-serif', color: '#CCCCCC', letterSpacing: '0.04em' }}>
           {color.toUpperCase()}
         </span>
       </button>
@@ -161,7 +161,7 @@ export const TradingViewColorPicker: React.FC<TradingViewColorPickerProps> = ({
 
           {/* Custom Hex Input and Native Picker Eye */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontSize: '0.68rem', color: '#737373', fontFamily: 'monospace' }}>HEX</span>
+            <span style={{ fontSize: '0.68rem', color: '#737373', fontFamily: 'Quicksand, sans-serif' }}>HEX</span>
             <input
               type="text"
               value={hexInput}
@@ -174,7 +174,7 @@ export const TradingViewColorPicker: React.FC<TradingViewColorPickerProps> = ({
                 border: '1px solid #262626',
                 borderRadius: '3px',
                 color: '#ffffff',
-                fontFamily: 'monospace',
+                fontFamily: 'Quicksand, sans-serif',
                 fontSize: '0.70rem',
                 padding: '3px 6px',
                 outline: 'none'

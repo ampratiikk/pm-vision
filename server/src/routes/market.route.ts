@@ -85,11 +85,14 @@ marketRouter.get('/option-chain', async (req: Request, res: Response) => {
 // GET /api/market/status
 marketRouter.get('/status', (_req: Request, res: Response) => {
   const session = getMarketSessionInfo();
+  const health = marketEngine.getFeedHealth();
   res.json({
     status: 'ok',
     marketStatus: isIndianMarketOpen() ? 'OPEN' : 'CLOSED',
     session,
     isBrokerConnected: marketEngine.isBrokerConnected(),
+    feedStatus: health.feedStatus,
+    lastDataUpdateAt: health.lastDataUpdateAt,
     timestamp: new Date().toISOString()
   });
 });
@@ -147,7 +150,7 @@ marketRouter.post('/auto-login', async (req: Request, res: Response) => {
       res.json({
         status: 'ok',
         connected: true,
-        message: 'Headless auto-login successful! Connected to FYERS.',
+        message: 'Headless auto-login successful! Connected to Data Feed.',
         spotPrice: brokerRes.spotPrice
       });
     } else {

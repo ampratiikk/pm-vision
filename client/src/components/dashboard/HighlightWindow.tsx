@@ -464,7 +464,7 @@ export const HighlightWindow: React.FC<HighlightWindowProps> = ({
         }}
       >
         <div>
-          <span style={{ fontSize: '1.25rem', fontWeight: 700, fontFamily: 'monospace', color: '#ffffff' }}>
+          <span style={{ fontSize: '1.25rem', fontWeight: 700, fontFamily: 'Quicksand, sans-serif', color: '#ffffff' }}>
             {current && current.ltp > 0 ? current.ltp.toFixed(2) : '—'}
           </span>
           {current && current.ltp > 0 && (
@@ -472,7 +472,7 @@ export const HighlightWindow: React.FC<HighlightWindowProps> = ({
               style={{
                 marginLeft: '0.5rem',
                 fontSize: '0.78rem',
-                fontFamily: 'monospace',
+                fontFamily: 'Quicksand, sans-serif',
                 color: (current?.change ?? 0) >= 0 ? '#10b981' : '#ef4444'
               }}
             >
@@ -486,14 +486,14 @@ export const HighlightWindow: React.FC<HighlightWindowProps> = ({
           {showBasis ? (
             <>
               Basis (Fut - Spot):{' '}
-              <span style={{ color: '#ffffff', fontFamily: 'monospace' }}>
+              <span style={{ color: '#ffffff', fontFamily: 'Quicksand, sans-serif' }}>
                 {Number(basisPts) >= 0 ? `+${basisPts}` : basisPts}
               </span>
             </>
           ) : (
             <>
               Open:{' '}
-              <span style={{ color: '#ffffff', fontFamily: 'monospace' }}>
+              <span style={{ color: '#ffffff', fontFamily: 'Quicksand, sans-serif' }}>
                 {current && current.open > 0 ? current.open.toFixed(2) : '—'}
               </span>
             </>
@@ -516,25 +516,25 @@ export const HighlightWindow: React.FC<HighlightWindowProps> = ({
       >
         <div>
           <div style={{ color: '#888888' }}>High</div>
-          <div style={{ fontFamily: 'monospace', color: '#ffffff', fontWeight: 600 }}>
+          <div style={{ fontFamily: 'Quicksand, sans-serif', color: '#ffffff', fontWeight: 600 }}>
             {current && current.high > 0 ? current.high.toFixed(2) : '—'}
           </div>
         </div>
         <div>
           <div style={{ color: '#888888' }}>Low</div>
-          <div style={{ fontFamily: 'monospace', color: '#ffffff', fontWeight: 600 }}>
+          <div style={{ fontFamily: 'Quicksand, sans-serif', color: '#ffffff', fontWeight: 600 }}>
             {current && current.low > 0 ? current.low.toFixed(2) : '—'}
           </div>
         </div>
         <div>
           <div style={{ color: '#888888' }}>VWAP</div>
-          <div style={{ fontFamily: 'monospace', color: '#ffffff', fontWeight: 600 }}>
+          <div style={{ fontFamily: 'Quicksand, sans-serif', color: '#ffffff', fontWeight: 600 }}>
             {current && current.vwap > 0 ? current.vwap.toFixed(2) : '—'}
           </div>
         </div>
         <div>
           <div style={{ color: '#888888' }}>Volume</div>
-          <div style={{ fontFamily: 'monospace', color: '#ffffff', fontWeight: 600 }}>{current.volume}</div>
+          <div style={{ fontFamily: 'Quicksand, sans-serif', color: '#ffffff', fontWeight: 600 }}>{current.volume}</div>
         </div>
       </div>
     </div>

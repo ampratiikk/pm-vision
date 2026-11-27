@@ -725,3 +725,25 @@ export const ALL_SECTORS = [
   'Construction Materials',
   'Capital Goods'
 ];
+
+export type WatchlistSegment =
+  | 'major_indices'
+  | 'nifty50'
+  | 'fno_stocks'
+  | 'all_stocks'
+  | 'indices'
+  | 'index_futures'
+  | 'stock_futures'
+  | 'all_futures';
+
+export const WATCHLIST_SEGMENT_OPTIONS: Array<{ id: WatchlistSegment; label: string }> = [
+  { id: 'major_indices', label: 'NSE Major Indices' },
+  { id: 'nifty50', label: 'NIFTY 50 Constituents (50)' },
+  { id: 'fno_stocks', label: 'NSE F&O Stocks' },
+  { id: 'all_stocks', label: 'All NSE Stocks' },
+  { id: 'indices', label: 'All NSE Indices' },
+  { id: 'index_futures', label: 'Index Futures (NIFTY, BANKNIFTY...)' },
+  { id: 'stock_futures', label: 'Stock Futures (F&O Contracts)' },
+  { id: 'all_futures', label: 'All Futures Contracts' }
+];
+

@@ -136,6 +136,8 @@ export interface InstrumentCatalogResponse {
   updatedAt: string;
 }
 
+export type FeedHealthStatus = 'LIVE' | 'RATE_LIMITED' | 'STALE' | 'PUBLIC' | 'OFFLINE';
+
 export interface MarketSnapshotPayload {
   securities: SecurityQuote[];
   basisSpreads: BasisSpreadPair[];
@@ -151,6 +153,8 @@ export interface MarketSnapshotPayload {
   marketStatus: MarketStatus;
   dataSource?: 'FYERS' | 'PUBLIC';
   isBrokerConnected?: boolean;
+  feedStatus?: FeedHealthStatus;
+  lastDataUpdateAt?: string;
 }
 
 export interface MarketSnapshotMessage extends BaseWebSocketMessage {

@@ -123,13 +123,13 @@ export const BasisSpreadWidget: React.FC<BasisSpreadWidgetProps> = ({
       }}>
         <div>
           <div style={{ fontSize: '0.75rem', color: '#CCCCCC' }}>{selectedPair.name}</div>
-          <div style={{ fontSize: '1.15rem', fontWeight: 700, fontFamily: 'monospace', color: '#ffffff' }}>
+          <div style={{ fontSize: '1.15rem', fontWeight: 700, fontFamily: 'Quicksand, sans-serif', color: '#ffffff' }}>
             {selectedPair.spread >= 0 ? '+' : ''}{selectedPair.spread.toFixed(2)} pts
           </div>
         </div>
         <div style={{ textAlign: 'right', fontSize: '0.72rem', color: '#CCCCCC' }}>
-          <div>Premium: <span style={{ color: '#ffffff', fontFamily: 'monospace' }}>+{selectedPair.spreadPct.toFixed(2)}%</span></div>
-          <div>Ann. Yield: <span style={{ color: '#ffffff', fontFamily: 'monospace' }}>{selectedPair.annualizedYield.toFixed(2)}%</span></div>
+          <div>Premium: <span style={{ color: '#ffffff', fontFamily: 'Quicksand, sans-serif' }}>+{selectedPair.spreadPct.toFixed(2)}%</span></div>
+          <div>Ann. Yield: <span style={{ color: '#ffffff', fontFamily: 'Quicksand, sans-serif' }}>{selectedPair.annualizedYield.toFixed(2)}%</span></div>
         </div>
       </div>
 
@@ -162,7 +162,7 @@ export const BasisSpreadWidget: React.FC<BasisSpreadWidgetProps> = ({
                 {pair.name}
                 {pair.isDefault && <span style={{ marginLeft: '4px', fontSize: '0.65rem', color: '#5F7A9A' }}>(Default)</span>}
               </span>
-              <span style={{ fontFamily: 'monospace', color: '#ffffff', fontWeight: isSelected ? 600 : 400 }}>
+              <span style={{ fontFamily: 'Quicksand, sans-serif', color: '#ffffff', fontWeight: isSelected ? 600 : 400 }}>
                 {pair.spread >= 0 ? '+' : ''}{pair.spread.toFixed(2)}
               </span>
             </div>

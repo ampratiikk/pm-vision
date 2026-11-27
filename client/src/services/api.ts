@@ -14,6 +14,8 @@ export async function fetchMarketStatus(): Promise<{
   marketStatus: 'OPEN' | 'CLOSED';
   session: MarketSessionInfo;
   isBrokerConnected: boolean;
+  feedStatus?: 'LIVE' | 'RATE_LIMITED' | 'STALE' | 'PUBLIC' | 'OFFLINE';
+  lastDataUpdateAt?: string;
 }> {
   const response = await fetch('/api/market/status');
   if (!response.ok) {
@@ -82,7 +84,7 @@ export async function fetchMarketHistory(resolution: string, symbol: string = 'N
 export async function fetchFyersLoginUrl(): Promise<{ loginUrl: string; appId: string; redirectUri: string }> {
   const response = await fetch('/api/market/fyers-login-url');
   if (!response.ok) {
-    throw new Error(`Failed to load FYERS login URL: ${response.status}`);
+    throw new Error(`Failed to load Data Feed login URL: ${response.status}`);
   }
   return response.json();
 }
