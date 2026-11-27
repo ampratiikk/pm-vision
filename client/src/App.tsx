@@ -47,6 +47,13 @@ import {
   NIFTY_INDICES
 } from './components/dashboard';
 import { SettingsModal } from './components/dashboard/SettingsModal';
+import { UserProfileMenu } from './components/dashboard/UserProfileMenu';
+import {
+  subscribeToAuth,
+  loadUserCloudSettings,
+  saveUserCloudSettings
+} from './services/firebase';
+import type { User } from 'firebase/auth';
 import logoImg from './assets/logo.png';
 
 type AppPage = 'dashboard' | 'chart' | 'heatmap';
@@ -1072,6 +1079,91 @@ export function App() {
     return { ltp, change, changePct };
   }, [mergedSecurities, spotPrice]);
 
+  // Firebase User Auth & Cloud Settings Sync (optional; never forces login)
+  const [authUser, setAuthUser] = useState<User | null>(null);
+  const [isCloudSyncing, setIsCloudSyncing] = useState<boolean>(false);
+  const cloudHydratedRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToAuth(async (user) => {
+      setAuthUser(user);
+      if (!user) {
+        cloudHydratedRef.current = false;
+        return;
+      }
+
+      setIsCloudSyncing(true);
+      try {
+        const cloud = await loadUserCloudSettings(user.uid);
+        if (cloud) {
+          if (Array.isArray(cloud.indicators) && cloud.indicators.length > 0) {
+            setIndicators(cloud.indicators);
+            try { localStorage.setItem('pm_vision_indicators_v3', JSON.stringify(cloud.indicators)); } catch {}
+          }
+          if (cloud.candleColors) {
+            setCandleColors(cloud.candleColors);
+            try { localStorage.setItem('pm_vision_candle_colors', JSON.stringify(cloud.candleColors)); } catch {}
+            chartRef.current?.applySeriesOptions({
+              upColor: cloud.candleColors.upBodyColor,
+              downColor: cloud.candleColors.downBodyColor,
+              borderUpColor: cloud.candleColors.upBorderColor,
+              borderDownColor: cloud.candleColors.downBorderColor,
+              wickUpColor: cloud.candleColors.upWickColor,
+              wickDownColor: cloud.candleColors.downWickColor
+            });
+          }
+          if (cloud.paneSeparatorColor) {
+            setPaneSeparatorColor(cloud.paneSeparatorColor);
+            try { localStorage.setItem('pm_vision_pane_separator_color', cloud.paneSeparatorColor); } catch {}
+          }
+          if (Array.isArray(cloud.pinnedTimeframes) && cloud.pinnedTimeframes.length > 0) {
+            setPinnedTimeframes(cloud.pinnedTimeframes);
+            try { localStorage.setItem('pm_vision_pinned_tf', JSON.stringify(cloud.pinnedTimeframes)); } catch {}
+          }
+          if (Array.isArray(cloud.highlightSymbols)) {
+            setHighlightSymbols(cloud.highlightSymbols);
+            try { localStorage.setItem('pm_vision_highlight_symbols', JSON.stringify(cloud.highlightSymbols)); } catch {}
+          }
+          if (cloud.defaultWatchlist) {
+            setDefaultWatchlist(cloud.defaultWatchlist);
+            setWatchlistSegment(cloud.defaultWatchlist);
+            try { localStorage.setItem('pm_vision_default_watchlist', cloud.defaultWatchlist); } catch {}
+          }
+        } else {
+          await saveUserCloudSettings(user.uid, {
+            indicators,
+            candleColors,
+            paneSeparatorColor,
+            pinnedTimeframes,
+            highlightSymbols,
+            defaultWatchlist
+          });
+        }
+      } finally {
+        cloudHydratedRef.current = true;
+        setIsCloudSyncing(false);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!authUser || !cloudHydratedRef.current) return;
+    const timer = setTimeout(() => {
+      setIsCloudSyncing(true);
+      saveUserCloudSettings(authUser.uid, {
+        indicators,
+        candleColors,
+        paneSeparatorColor,
+        pinnedTimeframes,
+        highlightSymbols,
+        defaultWatchlist
+      }).finally(() => setIsCloudSyncing(false));
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [authUser, indicators, candleColors, paneSeparatorColor, pinnedTimeframes, highlightSymbols, defaultWatchlist]);
+
   const formattedHeaderClock = useMemo(() => {
     try {
       return currentClock.toLocaleString('en-IN', {
@@ -1234,6 +1326,9 @@ export function App() {
             }} />
             <span>NSE: {sessionInfo.label}</span>
           </div>
+
+          {/* Top-Right Circular User Profile Icon (Google Login via Firebase, optional) */}
+          <UserProfileMenu user={authUser} isSyncing={isCloudSyncing} />
         </div>
       </header>
 
