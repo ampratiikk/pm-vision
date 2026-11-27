@@ -268,8 +268,8 @@ export const IndicatorsModal: React.FC<IndicatorsModalProps> = ({
         style={{
           width: '680px',
           maxWidth: '94vw',
-          height: '520px',
-          maxHeight: '85vh',
+          height: 'min(520px, 88dvh)',
+          maxHeight: '88dvh',
           backgroundColor: '#0a0a0a',
           border: '1px solid #262626',
           borderRadius: '8px',
@@ -316,9 +316,10 @@ export const IndicatorsModal: React.FC<IndicatorsModalProps> = ({
         </div>
 
         {/* Two-Pane Body: LHS List Panel + RHS Customization Panel */}
-        <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
+        <div className="pm-indicators-body" style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
           {/* LHS Indicator Navigation Sidebar */}
           <div
+            className="pm-indicators-sidebar"
             style={{
               width: '235px',
               flexShrink: 0,

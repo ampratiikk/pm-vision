@@ -80,6 +80,15 @@ const DEFAULT_PINNED = ['1m', '5m', '15m', '1H', '1D'];
 export function App() {
   const [activePage, setActivePage] = useState<AppPage>('dashboard');
   const prevPageRef = useRef<AppPage>('dashboard');
+  const [isMobile, setIsMobile] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 900 : false
+  );
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 900);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
   const [healthStatus, setHealthStatus] = useState<'online' | 'offline' | 'loading'>('loading');
   const [wsStatus, setWsStatus] = useState<'online' | 'offline' | 'loading'>('loading');
   const [isBrokerConnected, setIsBrokerConnected] = useState<boolean>(false);
@@ -1184,7 +1193,7 @@ export function App() {
   return (
     <div style={{
       width: '100%',
-      height: '100vh',
+      height: '100dvh',
       backgroundColor: '#000000',
       color: '#e5e7eb',
       display: 'flex',
@@ -1193,22 +1202,23 @@ export function App() {
     }}>
       {/* Header */}
       <header style={{
-        height: '48px',
+        height: isMobile ? '44px' : '48px',
         borderBottom: '1px solid #1a1a1a',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '0 1rem',
+        padding: isMobile ? '0 0.65rem' : '0 1rem',
+        gap: '0.5rem',
         backgroundColor: '#000000',
         flexShrink: 0
       }}>
         {/* Brand Logo (Transparent background, clean & crisp on pitch black) */}
-        <div style={{ display: 'flex', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
           <img
             src={logoImg}
             alt="PM Vision Logo"
             style={{
-              height: '32px',
+              height: isMobile ? '24px' : '32px',
               width: 'auto',
               objectFit: 'contain',
               display: 'block'
@@ -1216,8 +1226,8 @@ export function App() {
           />
         </div>
 
-        {/* Header Right: Disconnected Error -> Nifty Index Watch -> Current Date & Time -> NSE Market Status */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+        {/* Header Right: Disconnected Error -> Nifty Index Watch -> Current Date & Time -> NSE Market Status -> Profile */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '0.45rem' : '0.85rem', minWidth: 0 }}>
           {hasBrokerStatusLoaded && !isBrokerConnected && (
             <button
               onClick={() => setIsSettingsOpen(true)}
@@ -1225,15 +1235,16 @@ export function App() {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '6px',
-                fontSize: '0.72rem',
+                gap: '5px',
+                fontSize: isMobile ? '0.64rem' : '0.72rem',
                 color: '#fca5a5',
                 fontWeight: 600,
-                padding: '3px 9px',
+                padding: isMobile ? '2px 6px' : '3px 9px',
                 borderRadius: '4px',
                 backgroundColor: 'rgba(239, 68, 68, 0.12)',
                 border: '1px solid rgba(239, 68, 68, 0.35)',
-                cursor: 'pointer'
+                cursor: 'pointer',
+                whiteSpace: 'nowrap'
               }}
             >
               <span
@@ -1241,10 +1252,11 @@ export function App() {
                   width: '6px',
                   height: '6px',
                   borderRadius: '50%',
-                  backgroundColor: '#ef4444'
+                  backgroundColor: '#ef4444',
+                  flexShrink: 0
                 }}
               />
-              <span>Couldn&apos;t fetch data from Main data source</span>
+              <span>{isMobile ? 'Offline' : "Couldn't fetch data from Main data source"}</span>
             </button>
           )}
 
@@ -1259,21 +1271,22 @@ export function App() {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '7px',
-                fontSize: '0.74rem',
-                padding: '3px 10px',
-                marginRight: '0.35rem',
+                gap: isMobile ? '4px' : '7px',
+                fontSize: isMobile ? '0.68rem' : '0.74rem',
+                padding: isMobile ? '2px 6px' : '3px 10px',
+                marginRight: isMobile ? 0 : '0.35rem',
                 borderRadius: '4px',
                 backgroundColor: 'rgba(255, 255, 255, 0.03)',
                 border: '1px solid #1f1f1f',
                 cursor: 'pointer',
                 color: '#e5e7eb',
-                fontWeight: 600
+                fontWeight: 600,
+                whiteSpace: 'nowrap'
               }}
             >
-              <span style={{ color: '#9ca3af', fontWeight: 700 }}>Nifty</span>
+              {!isMobile && <span style={{ color: '#9ca3af', fontWeight: 700 }}>Nifty</span>}
               <span style={{ color: '#ffffff', fontWeight: 700 }}>
-                {niftyHeaderQuote.ltp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {niftyHeaderQuote.ltp.toLocaleString('en-IN', { minimumFractionDigits: isMobile ? 0 : 2, maximumFractionDigits: isMobile ? 0 : 2 })}
               </span>
               <span
                 style={{
@@ -1281,50 +1294,58 @@ export function App() {
                   fontWeight: 700
                 }}
               >
-                {niftyHeaderQuote.change >= 0 ? '+' : ''}
-                {niftyHeaderQuote.change.toFixed(2)} ({niftyHeaderQuote.changePct >= 0 ? '+' : ''}
+                {!isMobile && (
+                  <>
+                    {niftyHeaderQuote.change >= 0 ? '+' : ''}
+                    {niftyHeaderQuote.change.toFixed(2)}{' '}
+                  </>
+                )}
+                ({niftyHeaderQuote.changePct >= 0 ? '+' : ''}
                 {niftyHeaderQuote.changePct.toFixed(2)}%)
               </span>
             </button>
           )}
 
-          {/* Current Date & Time (IST) */}
-          <div
-            style={{
-              fontSize: '0.72rem',
-              color: '#a3a3a3',
-              fontWeight: 600,
-              padding: '3px 8px',
-              borderRadius: '4px',
-              backgroundColor: 'rgba(255, 255, 255, 0.02)',
-              border: '1px solid #1a1a1a',
-              whiteSpace: 'nowrap'
-            }}
-          >
-            {formattedHeaderClock} IST
-          </div>
+          {/* Current Date & Time (IST) - Hidden on narrow mobile screens to preserve header space */}
+          {!isMobile && (
+            <div
+              style={{
+                fontSize: '0.72rem',
+                color: '#a3a3a3',
+                fontWeight: 600,
+                padding: '3px 8px',
+                borderRadius: '4px',
+                backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                border: '1px solid #1a1a1a',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              {formattedHeaderClock} IST
+            </div>
+          )}
 
           {/* Domestic Market Status */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '6px',
-            fontSize: '0.72rem',
+            gap: '5px',
+            fontSize: isMobile ? '0.64rem' : '0.72rem',
             color: sessionInfo.status === 'LIVE' ? '#e5e7eb' : '#9ca3af',
             fontWeight: 600,
-            padding: '3px 8px',
+            padding: isMobile ? '2px 6px' : '3px 8px',
             borderRadius: '4px',
             backgroundColor: 'rgba(255, 255, 255, 0.03)',
-            border: '1px solid #1f1f1f'
+            border: '1px solid #1f1f1f',
+            whiteSpace: 'nowrap'
           }}>
             <span style={{
-              width: '7px',
-              height: '7px',
+              width: '6px',
+              height: '6px',
               borderRadius: '50%',
               backgroundColor: sessionInfo.dotColor,
               boxShadow: sessionInfo.status === 'LIVE' ? `0 0 6px ${sessionInfo.dotColor}` : 'none'
             }} />
-            <span>NSE: {sessionInfo.label}</span>
+            <span>{isMobile ? (sessionInfo.status === 'LIVE' ? 'Live' : 'Closed') : `NSE: ${sessionInfo.label}`}</span>
           </div>
 
           {/* Top-Right Circular User Profile Icon (Google Login via Firebase, optional) */}
@@ -1332,13 +1353,16 @@ export function App() {
         </div>
       </header>
 
-      {/* Main Workspace with Navigation Rail shifted to Right */}
-      <div style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>
+      {/* Main Workspace with Right Nav Rail on Desktop / Bottom Nav Bar on Mobile */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: isMobile ? 'column' : 'row', minHeight: 0, position: 'relative' }}>
         {/* Content Area: Keep Chart Workspace mounted (hidden via display:none in Heatmap mode so candles keep syncing seamlessly) */}
         <div
           style={{
             flex: 1,
             display: activePage !== 'heatmap' ? 'flex' : 'none',
+            flexDirection: isMobile ? 'column' : 'row',
+            overflowY: isMobile && activePage === 'dashboard' ? 'auto' : 'hidden',
+            overflowX: 'hidden',
             minWidth: 0,
             minHeight: 0,
             position: 'relative'
@@ -1346,7 +1370,10 @@ export function App() {
         >
             {/* Left Area (or Full Workspace in 'chart' view): Candlestick Chart */}
             <div style={{
-              flex: 1,
+              flex: isMobile && activePage === 'dashboard' ? 'none' : 1,
+              height: isMobile && activePage === 'dashboard' ? '56dvh' : undefined,
+              minHeight: isMobile && activePage === 'dashboard' ? '330px' : 0,
+              width: isMobile ? '100%' : undefined,
               display: 'flex',
               flexDirection: 'column',
               backgroundColor: '#000000',
@@ -1355,16 +1382,19 @@ export function App() {
             }}>
               {/* Chart Top Sub-Bar: Search on LHS + Symbol + Timeframes + Indicators */}
               <div style={{
-                height: '38px',
+                minHeight: '38px',
+                height: isMobile ? 'auto' : '38px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                padding: '0 0.85rem',
+                flexWrap: 'wrap',
+                gap: isMobile ? '6px' : '0.5rem',
+                padding: isMobile ? '6px 8px' : '0 0.85rem',
                 borderBottom: '1px solid #1a1a1a',
                 backgroundColor: '#050505',
                 flexShrink: 0
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', position: 'relative' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '6px' : '0.65rem', position: 'relative', flexWrap: 'wrap', maxWidth: '100%' }}>
                   {/* Search Option on LHS of Symbol Name */}
                   <button
                     onClick={() => setIsSymbolSearchOpen(true)}
@@ -1547,8 +1577,9 @@ export function App() {
                     <div style={{
                       position: 'absolute',
                       top: 'calc(100% + 4px)',
-                      left: '80px',
+                      left: isMobile ? '4px' : '80px',
                       width: '240px',
+                      maxWidth: 'calc(100vw - 24px)',
                       backgroundColor: '#0a0a0a',
                       border: '1px solid #262626',
                       borderRadius: '4px',
@@ -1829,14 +1860,17 @@ export function App() {
                   )}
                 </div>
 
-                {/* Inline Docked Watchlist Panel Inside Chart Tab (Non-Overlay) */}
+                {/* Inline Docked Watchlist Panel Inside Chart Tab (Full-width panel inside chart on Mobile) */}
                 {isWatchlistOpen && (
                   <div
                     style={{
-                      width: watchlistMode === 'fullscreen' ? '100%' : (activePage === 'chart' ? '360px' : '290px'),
-                      maxWidth: watchlistMode === 'fullscreen' ? '100%' : '45%',
+                      position: isMobile ? 'absolute' : 'relative',
+                      inset: isMobile ? 0 : undefined,
+                      zIndex: isMobile ? 45 : undefined,
+                      width: isMobile || watchlistMode === 'fullscreen' ? '100%' : (activePage === 'chart' ? '360px' : '290px'),
+                      maxWidth: isMobile || watchlistMode === 'fullscreen' ? '100%' : '45%',
                       flexShrink: 0,
-                      borderLeft: '1px solid #1a1a1a',
+                      borderLeft: isMobile ? 'none' : '1px solid #1a1a1a',
                       backgroundColor: '#0a0a0a',
                       display: 'flex',
                       flexDirection: 'column',
@@ -1868,6 +1902,7 @@ export function App() {
                       onSelectSymbol={(sym) => {
                         const meta = resolveSymbolMeta(sym);
                         handleSelectSymbol(meta.symbol, meta.name, meta.sector, meta.basePrice);
+                        if (isMobile) setIsWatchlistOpen(false);
                       }}
                     />
                   </div>
@@ -1875,43 +1910,46 @@ export function App() {
               </div>
             </div>
 
-            {/* IN DASHBOARD MODE: Horizontal Resizer + Stacked Right Sidebar */}
+            {/* IN DASHBOARD MODE: Horizontal Resizer (Desktop) + Stacked Right/Bottom Sidebar */}
             {activePage === 'dashboard' && (
               <>
-                {/* ↔ HORIZONTAL RESIZER BORDER (Drag to resize Left Chart vs Right Sidebar) */}
-                <div
-                  onMouseDown={startDraggingH}
-                  title="Drag left/right to resize sidebar width"
-                  style={{
-                    width: '8px',
-                    flexShrink: 0,
-                    cursor: 'col-resize',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: isDraggingH ? '#171717' : 'transparent',
-                    transition: 'background-color 0.15s ease'
-                  }}
-                >
-                  <div style={{
-                    width: '2px',
-                    height: '42px',
-                    borderRadius: '1px',
-                    backgroundColor: isDraggingH ? '#5F7A9A' : '#262626',
-                    transition: 'background-color 0.15s ease'
-                  }} />
-                </div>
+                {/* ↔ HORIZONTAL RESIZER BORDER (Desktop only) */}
+                {!isMobile && (
+                  <div
+                    onMouseDown={startDraggingH}
+                    title="Drag left/right to resize sidebar width"
+                    style={{
+                      width: '8px',
+                      flexShrink: 0,
+                      cursor: 'col-resize',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: isDraggingH ? '#171717' : 'transparent',
+                      transition: 'background-color 0.15s ease'
+                    }}
+                  >
+                    <div style={{
+                      width: '2px',
+                      height: '42px',
+                      borderRadius: '1px',
+                      backgroundColor: isDraggingH ? '#5F7A9A' : '#262626',
+                      transition: 'background-color 0.15s ease'
+                    }} />
+                  </div>
+                )}
 
-                {/* Right Area: Stacked Sidebar (Highlight Window, Basis Spread, Option Chain) */}
+                {/* Right / Bottom Area: Stacked Sidebar (Highlight Window, Basis Spread, Option Chain) */}
                 <div
                   ref={sidebarRef}
                   style={{
-                    width: `${sidebarWidth}px`,
+                    width: isMobile ? '100%' : `${sidebarWidth}px`,
                     flexShrink: 0,
                     display: 'flex',
                     flexDirection: 'column',
                     backgroundColor: '#050505',
-                    overflow: 'hidden'
+                    borderTop: isMobile ? '1px solid #1a1a1a' : undefined,
+                    overflow: isMobile ? 'visible' : 'hidden'
                   }}
                 >
                   <>
@@ -1919,17 +1957,17 @@ export function App() {
                       <div
                         ref={topSectionRef}
                         style={{
-                          height: `calc(${(1 - optionChainRatio) * 100}% - 4px)`,
+                          height: isMobile ? 'auto' : `calc(${(1 - optionChainRatio) * 100}% - 4px)`,
                           display: 'flex',
                           flexDirection: 'column',
-                          overflow: 'hidden',
-                          minHeight: '140px'
+                          overflow: isMobile ? 'visible' : 'hidden',
+                          minHeight: isMobile ? undefined : '140px'
                         }}
                       >
                         {/* 1. Highlight Window */}
                         <div style={{
-                          height: `calc(${highlightRatio * 100}% - 3px)`,
-                          minHeight: '80px',
+                          height: isMobile ? '220px' : `calc(${highlightRatio * 100}% - 3px)`,
+                          minHeight: isMobile ? '200px' : '80px',
                           overflow: 'hidden'
                         }}>
                           <HighlightWindow
@@ -1947,66 +1985,73 @@ export function App() {
                           />
                         </div>
 
-                        {/* ↕ SUB-VERTICAL RESIZER */}
-                        <div
-                          onMouseDown={startDraggingSubV}
-                          title="Drag up/down to resize Highlight Window & Basis Spread"
-                          style={{
-                            height: '6px',
-                            flexShrink: 0,
-                            cursor: 'row-resize',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            backgroundColor: isDraggingSubV ? '#171717' : 'transparent'
-                          }}
-                        >
-                          <div style={{
-                            height: '1px',
-                            width: '32px',
-                            backgroundColor: isDraggingSubV ? '#5F7A9A' : '#262626',
-                            transition: 'background-color 0.15s ease'
-                          }} />
-                        </div>
+                        {/* ↕ SUB-VERTICAL RESIZER (Desktop only) */}
+                        {!isMobile && (
+                          <div
+                            onMouseDown={startDraggingSubV}
+                            title="Drag up/down to resize Highlight Window & Basis Spread"
+                            style={{
+                              height: '6px',
+                              flexShrink: 0,
+                              cursor: 'row-resize',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              backgroundColor: isDraggingSubV ? '#171717' : 'transparent'
+                            }}
+                          >
+                            <div style={{
+                              height: '1px',
+                              width: '32px',
+                              backgroundColor: isDraggingSubV ? '#5F7A9A' : '#262626',
+                              transition: 'background-color 0.15s ease'
+                            }} />
+                          </div>
+                        )}
 
                         {/* 2. Basis Spread */}
                         <div style={{
-                          flex: 1,
-                          minHeight: '80px',
+                          flex: isMobile ? 'none' : 1,
+                          height: isMobile ? '210px' : undefined,
+                          minHeight: isMobile ? '180px' : '80px',
+                          borderTop: isMobile ? '1px solid #1a1a1a' : undefined,
                           overflow: 'hidden'
                         }}>
                           <BasisSpreadWidget pairs={basisSpreads} style={{ height: '100%' }} />
                         </div>
                       </div>
 
-                      {/* ↕ MAIN VERTICAL RESIZER */}
-                      <div
-                        onMouseDown={startDraggingV}
-                        title="Drag up/down to adjust Option Chain height"
-                        style={{
-                          height: '8px',
-                          flexShrink: 0,
-                          cursor: 'row-resize',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          backgroundColor: isDraggingV ? '#171717' : 'transparent',
-                          transition: 'background-color 0.15s ease'
-                        }}
-                      >
-                        <div style={{
-                          height: '2px',
-                          width: '42px',
-                          borderRadius: '1px',
-                          backgroundColor: isDraggingV ? '#5F7A9A' : '#262626',
-                          transition: 'background-color 0.15s ease'
-                        }} />
-                      </div>
+                      {/* ↕ MAIN VERTICAL RESIZER (Desktop only) */}
+                      {!isMobile && (
+                        <div
+                          onMouseDown={startDraggingV}
+                          title="Drag up/down to adjust Option Chain height"
+                          style={{
+                            height: '8px',
+                            flexShrink: 0,
+                            cursor: 'row-resize',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            backgroundColor: isDraggingV ? '#171717' : 'transparent',
+                            transition: 'background-color 0.15s ease'
+                          }}
+                        >
+                          <div style={{
+                            height: '2px',
+                            width: '42px',
+                            borderRadius: '1px',
+                            backgroundColor: isDraggingV ? '#5F7A9A' : '#262626',
+                            transition: 'background-color 0.15s ease'
+                          }} />
+                        </div>
+                      )}
 
                       {/* BOTTOM SECTION: Option Chain */}
                       <div style={{
-                        height: `calc(${optionChainRatio * 100}% - 4px)`,
-                        minHeight: '160px',
+                        height: isMobile ? '440px' : `calc(${optionChainRatio * 100}% - 4px)`,
+                        minHeight: isMobile ? '380px' : '160px',
+                        borderTop: isMobile ? '1px solid #1a1a1a' : undefined,
                         overflow: 'hidden',
                         display: 'flex',
                         flexDirection: 'column'
@@ -2049,21 +2094,23 @@ export function App() {
           </div>
         )}
 
-        {/* ===================== RIGHT NAVIGATION PANEL ===================== */}
+        {/* ===================== NAVIGATION RAIL (Right Sidebar on Desktop / Bottom Nav on Mobile) ===================== */}
         <aside style={{
-          width: '44px',
-          borderLeft: '1px solid #1a1a1a',
+          width: isMobile ? '100%' : '44px',
+          height: isMobile ? '50px' : undefined,
+          borderLeft: isMobile ? 'none' : '1px solid #1a1a1a',
+          borderTop: isMobile ? '1px solid #1a1a1a' : undefined,
           backgroundColor: '#050505',
           display: 'flex',
-          flexDirection: 'column',
+          flexDirection: isMobile ? 'row' : 'column',
           alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '12px 0',
+          justifyContent: isMobile ? 'space-around' : 'space-between',
+          padding: isMobile ? '0 8px' : '12px 0',
           flexShrink: 0,
           zIndex: 30
         }}>
-          {/* Top Navigation Views */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'center' }}>
+          {/* Top/Main Navigation Views */}
+          <div style={{ display: 'flex', flexDirection: isMobile ? 'row' : 'column', gap: isMobile ? '22px' : '10px', alignItems: 'center' }}>
             {/* 1. Main Dashboard Icon */}
             <button
               onClick={() => setActivePage('dashboard')}

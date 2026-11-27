@@ -1257,6 +1257,8 @@ export const NiftyHeatmap: React.FC<NiftyHeatmapProps> = ({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '0.5rem',
           backgroundColor: '#050505',
           flexShrink: 0
         }}

@@ -277,7 +277,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         {/* Body Content */}
-        <div style={{ padding: '1.2rem', display: 'flex', flexDirection: 'column', gap: '1rem', height: '440px', overflowY: 'auto' }}>
+        <div style={{ padding: '1.1rem', display: 'flex', flexDirection: 'column', gap: '1rem', height: 'min(440px, 66dvh)', overflowY: 'auto' }}>
           {/* 1. APPEARANCE */}
           {activeTab === 'appearance' && (
             <>
