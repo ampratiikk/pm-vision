@@ -69,16 +69,35 @@ marketRouter.get('/history', async (req: Request, res: Response) => {
 marketRouter.get('/option-chain', async (req: Request, res: Response) => {
   const expiry = req.query.expiry as string | undefined;
   try {
-    if (expiry) {
+    if (expiry && marketEngine.isOptionChainEnabled()) {
       const data = await marketEngine.changeOptionExpiry(expiry);
-      res.json({ status: 'ok', data });
+      res.json({ status: 'ok', optionChainEnabled: marketEngine.isOptionChainEnabled(), data });
     } else {
       const snapshot = marketEngine.getSnapshot();
-      res.json({ status: 'ok', data: snapshot });
+      res.json({ status: 'ok', optionChainEnabled: marketEngine.isOptionChainEnabled(), data: snapshot });
     }
   } catch (err: any) {
     console.error('Error in /api/market/option-chain:', err);
     res.status(500).json({ status: 'error', message: err?.message || 'Failed to fetch option chain' });
+  }
+});
+
+// POST /api/market/option-chain/toggle
+marketRouter.post('/option-chain/toggle', async (req: Request, res: Response) => {
+  const { enabled, expiry } = req.body || {};
+  try {
+    const data = await marketEngine.setOptionChainEnabled(
+      Boolean(enabled),
+      typeof expiry === 'string' ? expiry : undefined
+    );
+    res.json({
+      status: 'ok',
+      optionChainEnabled: marketEngine.isOptionChainEnabled(),
+      data
+    });
+  } catch (err: any) {
+    console.error('Error in /api/market/option-chain/toggle:', err);
+    res.status(500).json({ status: 'error', message: err?.message || 'Failed to toggle option chain' });
   }
 });
 
@@ -91,6 +110,7 @@ marketRouter.get('/status', (_req: Request, res: Response) => {
     marketStatus: isIndianMarketOpen() ? 'OPEN' : 'CLOSED',
     session,
     isBrokerConnected: marketEngine.isBrokerConnected(),
+    optionChainEnabled: marketEngine.isOptionChainEnabled(),
     feedStatus: health.feedStatus,
     lastDataUpdateAt: health.lastDataUpdateAt,
     timestamp: new Date().toISOString()

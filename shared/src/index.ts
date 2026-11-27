@@ -155,6 +155,7 @@ export interface MarketSnapshotPayload {
   isBrokerConnected?: boolean;
   feedStatus?: FeedHealthStatus;
   lastDataUpdateAt?: string;
+  optionChainEnabled?: boolean;
 }
 
 export interface MarketSnapshotMessage extends BaseWebSocketMessage {

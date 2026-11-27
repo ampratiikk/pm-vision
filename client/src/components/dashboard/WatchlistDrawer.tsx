@@ -262,6 +262,7 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
 
   const lastRequestedRef = useRef<Map<string, number>>(new Map());
   const dropdownContainerRef = useRef<HTMLDivElement>(null);
+  const listScrollRef = useRef<HTMLDivElement>(null);
 
   const [contextMenu, setContextMenu] = useState<{
     visible: boolean;
@@ -406,7 +407,7 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
       const live = securityMap.get(key);
       if (live && live.ltp > 0) continue;
       const last = lastRequestedRef.current.get(key) || 0;
-      if (now - last > 15000) {
+      if (now - last > 30000) {
         missing.push(item.symbol);
       }
     }
@@ -422,6 +423,45 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
 
     return () => clearTimeout(timer);
   }, [isOpen, visibleItems, securityMap, onRequestQuotes]);
+
+  // Expand displayLimit if arrow navigation steps past currently rendered slice
+  useEffect(() => {
+    if (!isOpen || !activeSymbol) return;
+    const targetUpper = activeSymbol.toUpperCase();
+    const idx = activeCatalogList.findIndex((item) => item.symbol.toUpperCase() === targetUpper);
+    if (idx >= displayLimit) {
+      setDisplayLimit(idx + 50);
+    }
+  }, [isOpen, activeSymbol, activeCatalogList, displayLimit]);
+
+  // Keep currently active chart symbol visible in Watchlist scroll viewport without altering serial order
+  useEffect(() => {
+    if (!isOpen || !activeSymbol) return;
+    const container = listScrollRef.current;
+    if (!container) return;
+
+    const raf = requestAnimationFrame(() => {
+      const targetUpper = activeSymbol.toUpperCase();
+      const rows = container.querySelectorAll<HTMLElement>('[data-watchlist-sym]');
+      let activeRow: HTMLElement | null = null;
+      for (let i = 0; i < rows.length; i++) {
+        if (rows[i].dataset.watchlistSym === targetUpper) {
+          activeRow = rows[i];
+          break;
+        }
+      }
+      if (!activeRow) return;
+      const cRect = container.getBoundingClientRect();
+      const rRect = activeRow.getBoundingClientRect();
+      if (rRect.top < cRect.top) {
+        container.scrollTop -= (cRect.top - rRect.top);
+      } else if (rRect.bottom > cRect.bottom) {
+        container.scrollTop += (rRect.bottom - cRect.bottom);
+      }
+    });
+
+    return () => cancelAnimationFrame(raf);
+  }, [isOpen, activeSymbol, segment, contractFilter, displayLimit]);
 
   if (!isOpen) return null;
 
@@ -490,6 +530,7 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
     return (
       <div
         key={item.symbol}
+        data-watchlist-sym={item.symbol.toUpperCase()}
         onClick={() => {
           onEngageWatchlist?.();
           onSelectSymbol?.(item.symbol);
@@ -891,7 +932,7 @@ export const WatchlistDrawer: React.FC<WatchlistDrawerProps> = ({
       </div>
 
       {/* Main List Content */}
-      <div style={{ flex: 1, overflowY: 'auto' }}>
+      <div ref={listScrollRef} style={{ flex: 1, overflowY: 'auto' }}>
         {activeCatalogList.length === 0 ? (
           <div style={{ padding: '2rem 1rem', textAlign: 'center', color: '#6b7280', fontSize: '0.72rem' }}>
             No matching instruments found.

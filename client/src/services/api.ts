@@ -14,6 +14,7 @@ export async function fetchMarketStatus(): Promise<{
   marketStatus: 'OPEN' | 'CLOSED';
   session: MarketSessionInfo;
   isBrokerConnected: boolean;
+  optionChainEnabled?: boolean;
   feedStatus?: 'LIVE' | 'RATE_LIMITED' | 'STALE' | 'PUBLIC' | 'OFFLINE';
   lastDataUpdateAt?: string;
 }> {
@@ -96,6 +97,21 @@ export async function fetchOptionChainByExpiry(expiry: string): Promise<MarketSn
   }
   const json = await response.json();
   return json.data;
+}
+
+export async function toggleOptionChainFeed(
+  enabled: boolean,
+  expiry?: string
+): Promise<{ status: string; optionChainEnabled: boolean; data: MarketSnapshotPayload }> {
+  const response = await fetch('/api/market/option-chain/toggle', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled, expiry })
+  });
+  if (!response.ok) {
+    throw new Error(`Option chain toggle error: ${response.status}`);
+  }
+  return response.json();
 }
 
 export async function updateBrokerToken(tokenOrAuthCode: string): Promise<{

@@ -16,6 +16,8 @@ interface SettingsModalProps {
   candleColors: CandleColorSettings;
   onUpdateCandleColors: (colors: CandleColorSettings) => void;
   onResetCandleColors: () => void;
+  paneSeparatorColor: string;
+  onChangePaneSeparatorColor: (color: string) => void;
   defaultWatchlist: WatchlistSegment;
   onChangeDefaultWatchlist: (segment: WatchlistSegment) => void;
   apiStatus: 'online' | 'offline' | 'loading';
@@ -26,6 +28,14 @@ interface SettingsModalProps {
   onBrokerConnected?: () => void;
 }
 
+const PANE_SEPARATOR_PRESETS = [
+  { label: 'Default Slate', color: '#2B2B43' },
+  { label: 'Steel Blue', color: '#5F7A9A' },
+  { label: 'Subtle Grey', color: '#262626' },
+  { label: 'Light Violet', color: '#c4b5fd' },
+  { label: 'Minimal Black', color: '#0a0a0a' }
+];
+
 const KEYBOARD_SHORTCUT_GROUPS: Array<{
   title: string;
   items: Array<{ keys: string; desc: string }>;
@@ -34,9 +44,10 @@ const KEYBOARD_SHORTCUT_GROUPS: Array<{
     title: 'Navigation & Workspace',
     items: [
       { keys: 'PageDown / PageUp', desc: 'Switch between Dashboard, Chart, and Heatmap tabs' },
+      { keys: 'Alt + S / Esc', desc: 'Open or close Settings window (Esc closes when open)' },
       { keys: 'Alt + W', desc: 'Open or close Watchlist panel (Dashboard & Chart tabs)' },
       { keys: 'Alt + Q', desc: 'Open or close Watchlist selector dropdown (when Watchlist is open)' },
-      { keys: 'Up / Down Arrow', desc: 'Step through symbols in active Watchlist (when Watchlist is engaged)' },
+      { keys: 'Up / Down Arrow', desc: 'Step through symbols in active Watchlist (uses Default Watchlist until another is opened)' },
       { keys: 'Any Letter (A-Z) or Ctrl+K', desc: 'Open Symbol Search immediately with typed query' }
     ]
   },
@@ -54,7 +65,7 @@ const KEYBOARD_SHORTCUT_GROUPS: Array<{
     items: [
       { keys: 'Left / Right Arrow', desc: 'Move chart left or right by 1 candle' },
       { keys: 'Ctrl + Left / Right Arrow', desc: 'Move chart left or right by 10 candles' },
-      { keys: 'Ctrl + Up / Down Arrow (or Up/Down on Chart)', desc: 'Zoom chart candles horizontally in or out' },
+      { keys: 'Ctrl + Up / Down Arrow', desc: 'Zoom chart candles horizontally in or out' },
       { keys: 'Shift + Up / Down Arrow', desc: 'Zoom price axis (Y-axis) range in or out' },
       { keys: 'Alt + R', desc: 'Reset chart viewport and price scale' }
     ]
@@ -68,6 +79,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   candleColors,
   onUpdateCandleColors,
   onResetCandleColors,
+  paneSeparatorColor,
+  onChangePaneSeparatorColor,
   defaultWatchlist,
   onChangeDefaultWatchlist,
   apiStatus,
@@ -389,10 +402,62 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </div>
 
+              <div style={{ backgroundColor: '#050505', border: '1px solid #1a1a1a', borderRadius: '4px', padding: '0.85rem' }}>
+                <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#e5e7eb', marginBottom: '0.65rem', letterSpacing: '0.05em' }}>
+                  CHART PANE SEPARATOR LINE
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                    {PANE_SEPARATOR_PRESETS.map((preset) => {
+                      const active = paneSeparatorColor.toLowerCase() === preset.color.toLowerCase();
+                      return (
+                        <button
+                          key={preset.label}
+                          type="button"
+                          onClick={() => onChangePaneSeparatorColor(preset.color)}
+                          title={`${preset.label} (${preset.color})`}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            padding: '4px 8px',
+                            borderRadius: '3px',
+                            fontSize: '0.68rem',
+                            fontWeight: active ? 700 : 500,
+                            backgroundColor: active ? 'rgba(95, 122, 154, 0.2)' : '#101010',
+                            border: `1px solid ${active ? '#5F7A9A' : '#262626'}`,
+                            color: active ? '#ffffff' : '#CCCCCC',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <span style={{
+                            width: '12px',
+                            height: '12px',
+                            borderRadius: '3px',
+                            backgroundColor: preset.color,
+                            border: '1px solid rgba(255,255,255,0.25)',
+                            display: 'inline-block'
+                          }} />
+                          <span>{preset.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <TradingViewColorPicker
+                    label="Custom Line Color"
+                    color={paneSeparatorColor}
+                    onChange={onChangePaneSeparatorColor}
+                  />
+                </div>
+              </div>
+
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <button
                   type="button"
-                  onClick={onResetCandleColors}
+                  onClick={() => {
+                    onResetCandleColors();
+                    onChangePaneSeparatorColor('#2B2B43');
+                  }}
                   style={{
                     padding: '6px 14px',
                     fontSize: '0.72rem',

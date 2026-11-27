@@ -45,76 +45,15 @@ export interface OptionRow {
 
 export const DEFAULT_SPOT_PRICE = 25819.25;
 
-/**
- * Generate a dynamically centered option chain around live Spot Price
- * when broker live OI feed is not yet authenticated.
- */
-function buildDynamicOptionChain(centerSpot: number = DEFAULT_SPOT_PRICE, sideStrikes: number = 50): OptionRow[] {
-  const rows: OptionRow[] = [];
-  const atm = Math.round(centerSpot / 50) * 50;
-  const span = Math.max(20, sideStrikes) * 50;
-  const minStrike = atm - span;
-  const maxStrike = atm + span;
-  const step = 50;
-
-  for (let strike = minStrike; strike <= maxStrike; strike += step) {
-    const d = strike - centerSpot; // distance from spot
-    const absD = Math.abs(d);
-
-    // Gamma (peaks at ATM)
-    const gamma = parseFloat(Math.max(0.0001, 0.0013 * Math.exp(-(absD * absD) / (2 * 180 * 180))).toFixed(4));
-
-    // Theta (most negative at ATM)
-    const thetaBase = -15.8 * Math.exp(-(absD * absD) / (2 * 280 * 280));
-    const callTheta = parseFloat((thetaBase * (1 + 0.04 * (d / 100))).toFixed(1));
-    const putTheta = parseFloat((thetaBase * (1 - 0.04 * (d / 100))).toFixed(1));
-
-    // Delta
-    const normD = -d / 280;
-    const callDelta = parseFloat(Math.min(0.99, Math.max(0.01, 1 / (1 + Math.exp(-normD)))).toFixed(2));
-    const putDelta = parseFloat((callDelta - 1).toFixed(2));
-
-    // Extrinsic & Intrinsic LTP
-    const timeValue = 170 * Math.exp(-(absD * absD) / (2 * 250 * 250));
-    const intrinsicCall = Math.max(0, centerSpot - strike);
-    const intrinsicPut = Math.max(0, strike - centerSpot);
-
-    const callLtp = parseFloat(Math.max(1.2, intrinsicCall + timeValue).toFixed(2));
-    const putLtp = parseFloat(Math.max(1.2, intrinsicPut + timeValue).toFixed(2));
-
-    const roundWeight = strike % 500 === 0 ? 1.8 : strike % 100 === 0 ? 1.3 : 1.0;
-    const baseOi = 65000 * Math.exp(-(absD * absD) / (2 * 450 * 450));
-    const callOi = Math.round((baseOi * (0.8 + 0.4 * Math.sin(strike / 100)) * roundWeight) / 100) * 100;
-    const putOi = Math.round((baseOi * (0.8 + 0.4 * Math.cos(strike / 100)) * roundWeight) / 100) * 100;
-
-    rows.push({
-      strike,
-      call: {
-        theta: callTheta,
-        gamma,
-        delta: callDelta,
-        oi: callOi,
-        ltp: callLtp
-      },
-      put: {
-        ltp: putLtp,
-        oi: putOi,
-        delta: putDelta,
-        gamma,
-        theta: putTheta
-      }
-    });
-  }
-
-  return rows;
-}
-
 export interface OptionChainWidgetProps {
   data?: OptionRow[];
   spotPrice?: number;
   expiries?: ExpiryOption[];
   selectedExpiry?: string;
   onSelectExpiry?: (expiryTimestamp: string) => void;
+  enabled?: boolean;
+  onToggleEnabled?: (nextEnabled: boolean) => void;
+  isBrokerConnected?: boolean;
 }
 
 export const OptionChainWidget: React.FC<OptionChainWidgetProps> = ({
@@ -122,7 +61,10 @@ export const OptionChainWidget: React.FC<OptionChainWidgetProps> = ({
   spotPrice,
   expiries,
   selectedExpiry,
-  onSelectExpiry
+  onSelectExpiry,
+  enabled = false,
+  onToggleEnabled,
+  isBrokerConnected = false
 }) => {
   const currentSpotPrice = spotPrice && spotPrice > 0 ? spotPrice : DEFAULT_SPOT_PRICE;
   const currentAtmStrike = Math.round(currentSpotPrice / 50) * 50;
@@ -145,11 +87,7 @@ export const OptionChainWidget: React.FC<OptionChainWidgetProps> = ({
     } catch {}
   };
 
-  const fallbackChain = useMemo(
-    () => buildDynamicOptionChain(currentSpotPrice, Math.max(50, strikeCount)),
-    [currentSpotPrice, strikeCount]
-  );
-  const currentChain = data && data.length > 0 ? data : fallbackChain;
+  const currentChain = useMemo(() => (data && data.length > 0 ? data : []), [data]);
 
   const [selectedStrike, setSelectedStrike] = useState<number>(currentAtmStrike);
   const [showSettings, setShowSettings] = useState<boolean>(false);
@@ -308,6 +246,19 @@ export const OptionChainWidget: React.FC<OptionChainWidgetProps> = ({
           <span style={{ fontSize: '0.80rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#a3a3a3', fontWeight: 700 }}>
             OPTION CHAIN
           </span>
+          {!enabled && currentChain.length > 0 && (
+            <span style={{
+              fontSize: '0.60rem',
+              padding: '1px 5px',
+              borderRadius: '2px',
+              backgroundColor: 'rgba(115, 115, 115, 0.16)',
+              border: '1px solid #262626',
+              color: '#9ca3af',
+              fontWeight: 700
+            }}>
+              PAUSED
+            </span>
+          )}
           <span style={{
             fontSize: '0.70rem',
             padding: '1px 6px',
@@ -326,15 +277,16 @@ export const OptionChainWidget: React.FC<OptionChainWidgetProps> = ({
               <select
                 value={selectedExpiry || (expiries[0]?.expiry || '')}
                 onChange={(e) => onSelectExpiry?.(e.target.value)}
+                disabled={!enabled}
                 style={{
                   backgroundColor: '#0a0a0a',
-                  color: '#e5e7eb',
+                  color: enabled ? '#e5e7eb' : '#737373',
                   border: '1px solid #262626',
                   borderRadius: '3px',
                   fontSize: '0.70rem',
                   padding: '2px 6px',
                   outline: 'none',
-                  cursor: 'pointer'
+                  cursor: enabled ? 'pointer' : 'not-allowed'
                 }}
               >
                 {expiries.map((exp) => (
@@ -347,8 +299,40 @@ export const OptionChainWidget: React.FC<OptionChainWidgetProps> = ({
           )}
         </div>
 
-        {/* Settings Button */}
-        <div style={{ position: 'relative' }}>
+        {/* Enable/Disable Toggle (LHS of Settings) & Settings Button */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', position: 'relative' }}>
+          <button
+            type="button"
+            onClick={() => onToggleEnabled?.(!enabled)}
+            title={
+              enabled
+                ? 'Option Chain active (updates every 2s). Click to disable and save token quota.'
+                : 'Option Chain disabled to save token quota. Click to enable live 2s updates.'
+            }
+            style={{
+              padding: '2px 9px',
+              fontSize: '0.70rem',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '5px',
+              backgroundColor: enabled ? 'rgba(16, 185, 129, 0.14)' : '#0a0a0a',
+              borderColor: enabled ? 'rgba(16, 185, 129, 0.45)' : '#262626',
+              color: enabled ? '#34d399' : '#d4d4d4'
+            }}
+          >
+            <span
+              style={{
+                width: '6px',
+                height: '6px',
+                borderRadius: '50%',
+                backgroundColor: enabled ? '#10b981' : '#525252',
+                boxShadow: enabled ? '0 0 6px #10b981' : 'none'
+              }}
+            />
+            <span>{enabled ? 'Disable' : 'Enable'}</span>
+          </button>
+
           <button
             onClick={() => setShowSettings(!showSettings)}
             style={{
@@ -505,19 +489,68 @@ export const OptionChainWidget: React.FC<OptionChainWidgetProps> = ({
         </div>
       </div>
 
-      {/* Main Table: Single Vertical Scroll Container for ALL Rows */}
-      <div
-        ref={tableContainerRef}
-        style={{
-          flex: 1,
-          overflowY: 'auto',
-          overflowX: 'hidden',
-          display: 'flex',
-          flexDirection: 'column',
-          backgroundColor: '#000000',
-          minHeight: 0
-        }}
-      >
+      {/* Main Content: Empty/Disabled Banner OR Option Chain Table */}
+      {currentChain.length === 0 ? (
+        <div
+          style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1.5rem',
+            backgroundColor: '#000000',
+            textAlign: 'center',
+            gap: '0.65rem'
+          }}
+        >
+          <div style={{ fontSize: '0.82rem', fontWeight: 700, color: enabled ? '#e5e7eb' : '#9ca3af' }}>
+            {enabled
+              ? isBrokerConnected
+                ? 'Fetching live Option Chain (updates every 2s)...'
+                : 'Connect Data Feed in Settings (Alt+S) to fetch live Option Chain'
+              : 'Option Chain Fetching Disabled'}
+          </div>
+          <div style={{ fontSize: '0.70rem', color: '#737373', maxWidth: '300px', lineHeight: 1.45 }}>
+            {enabled
+              ? 'Live strike chain and open interest will populate here once received.'
+              : 'Kept disabled by default to conserve API quota. Enable to fetch live updates every 2 seconds.'}
+          </div>
+          {!enabled && onToggleEnabled && (
+            <button
+              type="button"
+              onClick={() => onToggleEnabled(true)}
+              style={{
+                marginTop: '4px',
+                padding: '5px 14px',
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                backgroundColor: '#5F7A9A',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+            >
+              Enable Option Chain
+            </button>
+          )}
+        </div>
+      ) : (
+        <>
+          {/* Main Table: Single Vertical Scroll Container for ALL Rows */}
+          <div
+            ref={tableContainerRef}
+            style={{
+              flex: 1,
+              overflowY: 'auto',
+              overflowX: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+              backgroundColor: '#000000',
+              minHeight: 0
+            }}
+          >
         {/* ===================== UNIFIED STICKY HEADER (ZERO GAP) ===================== */}
         <div style={{
           position: 'sticky',
@@ -859,6 +892,8 @@ export const OptionChainWidget: React.FC<OptionChainWidgetProps> = ({
           <div style={{ width: `calc(100% + ${maxScroll}px)`, height: '1px' }} />
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 };

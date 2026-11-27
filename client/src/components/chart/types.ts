@@ -12,6 +12,8 @@ export type { CandlestickData, Time };
 
 export const MAX_MA_COUNT = 8;
 
+export const DEFAULT_PANE_SEPARATOR_COLOR = '#2B2B43';
+
 // Ordered 1st..8th default colors for EMA & SMA (Dark Blue, Orange, Red, Violet, Pink, Yellow, Green, Brown)
 export const MA_DEFAULT_COLORS: string[] = [
   '#1d4ed8', // 1st: Dark Blue
@@ -109,6 +111,7 @@ export interface CandlestickChartProps {
   onBarUpdate?: (candles: CandlestickData<Time>[]) => void;
   casPrice?: number;
   timeframe?: string;
+  paneSeparatorColor?: string;
 }
 
 export type IndicatorType = 'OR' | 'VWAP' | 'EMA' | 'SMA' | 'VOLUME' | 'RSI' | 'ADX';
@@ -136,6 +139,8 @@ export interface IndicatorConfig {
     colorDown?: string;
     rsiOverbought?: number;
     rsiOversold?: number;
+    rsiOverboughtColor?: string;
+    rsiOversoldColor?: string;
     showDI?: boolean;
     plusDiColor?: string;
     minusDiColor?: string;
@@ -226,7 +231,9 @@ export const DEFAULT_INDICATORS: IndicatorConfig[] = [
     options: {
       period: 14,
       rsiOverbought: 70,
-      rsiOversold: 30
+      rsiOversold: 30,
+      rsiOverboughtColor: '#c4b5fd',
+      rsiOversoldColor: '#c4b5fd'
     }
   },
   {

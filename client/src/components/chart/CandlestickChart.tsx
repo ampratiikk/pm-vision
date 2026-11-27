@@ -488,7 +488,8 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
       onToggleIndicatorVisibility,
       onBarUpdate,
       casPrice,
-      timeframe = '5m'
+      timeframe = '5m',
+      paneSeparatorColor = '#2B2B43'
     },
     ref
   ) => {
@@ -749,7 +750,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
             const os = ind.options.rsiOversold ?? 30;
             rsiSeries.createPriceLine({
               price: ob,
-              color: 'rgba(239, 68, 68, 0.45)',
+              color: ind.options.rsiOverboughtColor || '#c4b5fd',
               lineWidth: 1,
               lineStyle: LineStyle.Dashed,
               axisLabelVisible: false,
@@ -765,7 +766,7 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
             });
             rsiSeries.createPriceLine({
               price: os,
-              color: 'rgba(16, 185, 129, 0.45)',
+              color: ind.options.rsiOversoldColor || '#c4b5fd',
               lineWidth: 1,
               lineStyle: LineStyle.Dashed,
               axisLabelVisible: false,
@@ -1102,7 +1103,12 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
           background: { type: ColorType.Solid, color: '#000000' },
           textColor: '#5F7A9A',
           fontSize: 12,
-          fontFamily: 'Quicksand, sans-serif'
+          fontFamily: 'Quicksand, sans-serif',
+          panes: {
+            enableResize: true,
+            separatorColor: paneSeparatorColor || '#2B2B43',
+            separatorHoverColor: 'rgba(95, 122, 154, 0.35)'
+          }
         },
         grid: {
           vertLines: { visible: false },
@@ -1428,6 +1434,20 @@ export const CandlestickChart = forwardRef<ChartImperativeHandle, CandlestickCha
         seriesRef.current.applyOptions(seriesOptions);
       }
     }, [seriesOptions]);
+
+    useEffect(() => {
+      if (chartRef.current) {
+        chartRef.current.applyOptions({
+          layout: {
+            panes: {
+              enableResize: true,
+              separatorColor: paneSeparatorColor || '#2B2B43',
+              separatorHoverColor: 'rgba(95, 122, 154, 0.35)'
+            }
+          }
+        });
+      }
+    }, [paneSeparatorColor]);
 
     // Group active indicators for clean OHLC indicator strip (EMA stacked, SMA stacked, no dots, no gear)
     const groupedIndicatorBadges = useMemo(() => {

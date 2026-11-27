@@ -36,6 +36,10 @@ export class FyersBrokerProvider implements IBrokerProvider {
   private rateLimitedUntil: number = 0;
   private rateLimitStrikes: number = 0;
 
+  // Short-lived history cache + in-flight dedup to conserve Data API daily quota
+  private historyCache: Map<string, { ts: number; data: ChartCandleTick[] }> = new Map();
+  private historyInFlight: Map<string, Promise<ChartCandleTick[]>> = new Map();
+
   public isConnected(): boolean {
     return this.connected;
   }
@@ -477,13 +481,31 @@ export class FyersBrokerProvider implements IBrokerProvider {
     if (this.isRateLimited()) return [];
     await symbolMaster.ensureLoaded();
 
-    let fyersRes = 'D';
-    let lookbackDays = 365; // 1 full year for daily
-
     const resTrimmed = resolution.trim();
     const resClean = resTrimmed.toLowerCase();
+    const cacheKey = `${symbol.trim().toUpperCase()}::${resTrimmed === '1M' || resTrimmed === 'M' ? '1M' : resClean}`;
+    const ttlMs =
+      resTrimmed === '1M' || resTrimmed === 'M' || resClean === '1w' || resClean === '1d' || resClean === 'd'
+        ? 180_000
+        : resClean === '1h' || resClean === '2h' || resClean === '4h' || resClean === '60' || resClean === '120' || resClean === '240'
+        ? 45_000
+        : 15_000;
 
-    if (resTrimmed === '1M' || resTrimmed === 'M' || resClean === '1mo') {
+    const cached = this.historyCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < ttlMs) {
+      return cached.data;
+    }
+
+    const existingPromise = this.historyInFlight.get(cacheKey);
+    if (existingPromise) {
+      return existingPromise;
+    }
+
+    const fetchTask = (async (): Promise<ChartCandleTick[]> => {
+      let fyersRes = 'D';
+      let lookbackDays = 365; // 1 full year for daily
+
+      if (resTrimmed === '1M' || resTrimmed === 'M' || resClean === '1mo') {
       fyersRes = '1M';
       lookbackDays = 366;
     } else if (resClean === '1w' || resClean === 'w' || resClean === '1wk') {
@@ -574,7 +596,7 @@ export class FyersBrokerProvider implements IBrokerProvider {
 
       const sorted = Array.from(candleMap.values()).sort((a, b) => a[0] - b[0]);
 
-      return sorted.map((c: any[]) => {
+      const mapped: ChartCandleTick[] = sorted.map((c: any[]) => {
         const epoch = c[0];
         // Normalize all resolutions (daily & intraday) to UNIX timestamp in seconds (IST shifted)
         // This ensures 100% type consistency across all chart resolutions in Lightweight Charts.
@@ -589,9 +611,26 @@ export class FyersBrokerProvider implements IBrokerProvider {
           volume: Number(c[5]) || 0
         };
       });
+
+      if (mapped.length > 0) {
+        if (this.historyCache.size > 100) {
+          const oldestKey = this.historyCache.keys().next().value;
+          if (oldestKey) this.historyCache.delete(oldestKey);
+        }
+        this.historyCache.set(cacheKey, { ts: Date.now(), data: mapped });
+      }
+      return mapped;
     } catch (err) {
-      console.error('[FYERS Provider] Error fetching history:', err);
+      console.error('[Feed Provider] Error fetching history:', err);
       return [];
+    }
+    })();
+
+    this.historyInFlight.set(cacheKey, fetchTask);
+    try {
+      return await fetchTask;
+    } finally {
+      this.historyInFlight.delete(cacheKey);
     }
   }
 

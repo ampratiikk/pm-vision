@@ -44,6 +44,9 @@ export class MarketEngine {
   private lastDataUpdateAt: number = 0;
   private consecutiveRestFailures: number = 0;
   private socketBroadcastTimer: NodeJS.Timeout | null = null;
+  private optionChainEnabled: boolean = false;
+  private activeClientCount: number = 0;
+  private quoteUpdatedAt: Map<string, number> = new Map();
 
   // Active symbols monitored for live streaming (capped for REST quota; WS subscribes core + 50 stocks)
   private monitoredSymbols: Set<string> = new Set(['NSE:NIFTY50-INDEX']);
@@ -122,15 +125,6 @@ export class MarketEngine {
       if (connected) {
         console.log('[MarketEngine] Primary feed authenticated. Real-time streaming active...');
         await this.syncWithBroker();
-        // Low-frequency periodic REST reconciliation (every 3 minutes) if WebSocket isn't active
-        setInterval(() => {
-          if (this.brokerProvider.isConnected() && !this.brokerProvider.isRateLimited()) {
-            const wsSilent = Date.now() - this.brokerProvider.getLastSocketTickAt() > 15000;
-            if (wsSilent) {
-              this.syncWithBroker();
-            }
-          }
-        }, 180000);
       } else {
         console.log('[MarketEngine] Primary feed inactive. Hydrating real market snapshot via public NSE feed...');
         await this.syncPublicQuotes(true);
@@ -138,12 +132,39 @@ export class MarketEngine {
     });
   }
 
+  public setActiveClientCount(count: number): void {
+    this.activeClientCount = Math.max(0, count);
+  }
+
+  public isOptionChainEnabled(): boolean {
+    return this.optionChainEnabled;
+  }
+
+  public async setOptionChainEnabled(enabled: boolean, expiryTimestamp?: string): Promise<MarketSnapshotPayload> {
+    this.optionChainEnabled = enabled;
+    if (expiryTimestamp !== undefined) {
+      this.selectedExpiry = expiryTimestamp;
+    }
+    if (enabled && this.brokerProvider.isConnected() && !this.brokerProvider.isRateLimited()) {
+      const updated = await this.syncOptionChain(this.selectedExpiry, true);
+      if (updated) {
+        this.lastDataUpdateAt = Date.now();
+      }
+    }
+    const payload = this.buildPayload();
+    this.notifyListeners(payload);
+    return payload;
+  }
+
   private handleRealtimeSocketTick(tick: SecurityQuote): void {
     const fUpper = tick.symbol.toUpperCase();
-    this.lastDataUpdateAt = Date.now();
+    const now = Date.now();
+    this.lastDataUpdateAt = now;
     this.consecutiveRestFailures = 0;
 
     if (fUpper === 'NSE:NIFTY50-INDEX') {
+      this.quoteUpdatedAt.set('NIFTY 50', now);
+      this.quoteUpdatedAt.set(fUpper, now);
       this.spotPrice = tick.ltp;
       this.spotOpen = tick.open || tick.ltp;
       this.spotHigh = tick.high || tick.ltp;
@@ -316,29 +337,60 @@ export class MarketEngine {
   }
 
   /**
-   * On-demand quote hydration for Watchlist segments (all NSE equities, indices, futures)
+   * On-demand quote hydration for Watchlist segments (cache & WebSocket first to save API quota)
    */
   public async fetchOnDemandQuotes(symbols: string[]): Promise<SecurityQuote[]> {
     if (!symbols || symbols.length === 0) return [];
     await symbolMaster.ensureLoaded();
 
     const limited = symbols.slice(0, 60);
+    const now = Date.now();
+    const freshnessMs = 6000;
 
     if (this.brokerProvider.isConnected()) {
       const reqToFyers = new Map<string, string>();
+      const staleFyers: string[] = [];
+      const allFyers: string[] = [];
+
       for (const s of limited) {
-        reqToFyers.set(s.toUpperCase(), symbolMaster.resolveInstrument(s).fyersSymbol);
+        const key = s.toUpperCase();
+        const fs = symbolMaster.resolveInstrument(s).fyersSymbol;
+        reqToFyers.set(key, fs);
+        if (fs && fs.includes(':')) {
+          allFyers.push(fs);
+          const lastAt = Math.max(
+            this.quoteUpdatedAt.get(key) || 0,
+            this.quoteUpdatedAt.get(fs.toUpperCase()) || 0
+          );
+          if (now - lastAt > freshnessMs) {
+            staleFyers.push(fs);
+          }
+        }
       }
-      const quotes = await this.brokerProvider.fetchQuotes(Array.from(new Set(reqToFyers.values())));
+
+      // Subscribe requested symbols on WebSocket so subsequent ticks stream without REST polling
+      if (allFyers.length > 0) {
+        this.brokerProvider.subscribe(allFyers);
+      }
+
       const byFyers = new Map<string, SecurityQuote>();
-      for (const q of quotes) {
-        this.storeFyersQuote(q);
-        byFyers.set(q.symbol.toUpperCase(), q);
+      const uniqueStale = Array.from(new Set(staleFyers));
+      if (uniqueStale.length > 0 && !this.brokerProvider.isRateLimited()) {
+        const quotes = await this.brokerProvider.fetchQuotes(uniqueStale);
+        for (const q of quotes) {
+          this.storeFyersQuote(q);
+          byFyers.set(q.symbol.toUpperCase(), q);
+        }
       }
+
       const out: SecurityQuote[] = [];
       for (const s of limited) {
-        const fs = reqToFyers.get(s.toUpperCase())?.toUpperCase();
-        const q = (fs && byFyers.get(fs)) || this.customQuotes.get(s.toUpperCase());
+        const upper = s.toUpperCase();
+        const fs = reqToFyers.get(upper)?.toUpperCase();
+        const q =
+          (fs && byFyers.get(fs)) ||
+          this.customQuotes.get(upper) ||
+          (fs ? this.customQuotes.get(fs) : undefined);
         if (q) out.push({ ...q, symbol: s });
       }
       return out;
@@ -349,16 +401,27 @@ export class MarketEngine {
       const r = symbolMaster.resolveInstrument(s).instrument;
       return !r || (r.category !== 'INDEX_FUTURES' && r.category !== 'STOCK_FUTURES');
     });
-    const pubQuotes = await this.publicProvider.fetchQuotes(cashSymbols);
-    for (const q of pubQuotes) {
-      this.storePublicQuote(q.symbol, q);
+    const staleCash = cashSymbols.filter((s) => now - (this.quoteUpdatedAt.get(s.toUpperCase()) || 0) > freshnessMs);
+    if (staleCash.length > 0) {
+      const pubQuotes = await this.publicProvider.fetchQuotes(staleCash);
+      for (const q of pubQuotes) {
+        this.storePublicQuote(q.symbol, q);
+      }
     }
-    return pubQuotes;
+    const pubOut: SecurityQuote[] = [];
+    for (const s of cashSymbols) {
+      const q = this.customQuotes.get(s.toUpperCase());
+      if (q) pubOut.push(q);
+    }
+    return pubOut;
   }
 
   private storePublicQuote(rawSym: string, q: SecurityQuote): void {
     const upper = rawSym.trim().toUpperCase();
+    const now = Date.now();
+    this.quoteUpdatedAt.set(upper, now);
     if (upper === 'NIFTY 50' || upper === 'NIFTY' || upper === 'NIFTY50') {
+      this.quoteUpdatedAt.set('NIFTY 50', now);
       this.spotPrice = q.ltp;
       this.spotOpen = q.open || q.ltp;
       this.spotHigh = q.high || q.ltp;
@@ -381,6 +444,8 @@ export class MarketEngine {
 
     this.customQuotes.set(upper, { ...q, symbol: upper });
     if (upper === 'NIFTY BANK' || upper === 'BANK NIFTY') {
+      this.quoteUpdatedAt.set('NIFTY BANK', now);
+      this.quoteUpdatedAt.set('BANK NIFTY', now);
       this.customQuotes.set('NIFTY BANK', { ...q, symbol: 'NIFTY BANK' });
       this.customQuotes.set('BANK NIFTY', { ...q, symbol: 'BANK NIFTY' });
     }
@@ -425,12 +490,17 @@ export class MarketEngine {
 
   private storeFyersQuote(q: SecurityQuote): void {
     const fUpper = q.symbol.toUpperCase();
+    const now = Date.now();
     this.customQuotes.set(fUpper, q);
+    this.quoteUpdatedAt.set(fUpper, now);
 
     const bare = fUpper.replace(/^NSE:/, '').replace(/-EQ$/, '').replace(/-INDEX$/, '');
     this.customQuotes.set(bare, { ...q, symbol: bare });
+    this.quoteUpdatedAt.set(bare, now);
 
     if (bare === 'NIFTYBANK' || bare === 'NIFTY BANK') {
+      this.quoteUpdatedAt.set('NIFTY BANK', now);
+      this.quoteUpdatedAt.set('BANK NIFTY', now);
       this.customQuotes.set('NIFTY BANK', { ...q, symbol: 'NIFTY BANK' });
       this.customQuotes.set('BANK NIFTY', { ...q, symbol: 'BANK NIFTY' });
     }
@@ -441,6 +511,7 @@ export class MarketEngine {
     // Mirror Current-month Futures quote onto TradingView continuous alias (e.g. RELIANCE1!, NIFTY1!)
     const resolved = symbolMaster.resolveInstrument(fUpper).instrument;
     if (resolved && resolved.futuresRole === 'CURRENT') {
+      this.quoteUpdatedAt.set(`${resolved.underlying}1!`, now);
       this.customQuotes.set(`${resolved.underlying}1!`, { ...q, symbol: `${resolved.underlying}1!` });
     }
 
@@ -506,11 +577,12 @@ export class MarketEngine {
   }
 
   /**
-   * Option chain synchronization (runs every 45s during market hours, single-flight guarded)
+   * Option chain synchronization (ONLY fetches when explicitly enabled by user; 2s interval)
    */
-  public async syncOptionChain(expiryTimestamp?: string): Promise<void> {
-    if (!this.brokerProvider.isConnected() || this.brokerProvider.isRateLimited()) return;
-    if (this.optionSyncInFlight) return;
+  public async syncOptionChain(expiryTimestamp?: string, force: boolean = false): Promise<boolean> {
+    if (!this.optionChainEnabled && !force) return false;
+    if (!this.brokerProvider.isConnected() || this.brokerProvider.isRateLimited()) return false;
+    if (this.optionSyncInFlight) return false;
     this.optionSyncInFlight = true;
     try {
       const chainData = await this.brokerProvider.fetchOptionChain(expiryTimestamp || this.selectedExpiry);
@@ -527,9 +599,12 @@ export class MarketEngine {
         if (chainData.futPrice > chainData.spotPrice) {
           this.fut1Spread = parseFloat((chainData.futPrice - chainData.spotPrice).toFixed(2));
         }
+        return true;
       }
+      return false;
     } catch (err) {
       console.error('[MarketEngine] Option chain sync error:', err);
+      return false;
     } finally {
       this.optionSyncInFlight = false;
     }
@@ -538,7 +613,9 @@ export class MarketEngine {
   public async syncWithBroker(expiryTimestamp?: string): Promise<void> {
     try {
       await this.syncQuotes();
-      await this.syncOptionChain(expiryTimestamp);
+      if (this.optionChainEnabled) {
+        await this.syncOptionChain(expiryTimestamp);
+      }
       console.log(`[MarketEngine] Synced Feed: Spot=${this.spotPrice}, Spread=+${this.fut1Spread} pts, Expiries=${this.expiries.length}, Strikes=${this.cachedOptionChain?.length || 0}`);
       const payload = this.buildPayload();
       this.notifyListeners(payload);
@@ -549,7 +626,9 @@ export class MarketEngine {
 
   public async changeOptionExpiry(expiryTimestamp: string): Promise<MarketSnapshotPayload> {
     this.selectedExpiry = expiryTimestamp;
-    await this.syncOptionChain(expiryTimestamp);
+    if (this.optionChainEnabled) {
+      await this.syncOptionChain(expiryTimestamp);
+    }
     const payload = this.buildPayload();
     this.notifyListeners(payload);
     return payload;
@@ -611,11 +690,11 @@ export class MarketEngine {
       const now = Date.now();
       if (isIndianMarketOpen()) {
         const connected = this.brokerProvider.isConnected();
-        const socketHealthy = connected && this.brokerProvider.isSocketConnected() && now - this.brokerProvider.getLastSocketTickAt() <= 6000;
+        const socketHealthy = connected && this.brokerProvider.isSocketConnected() && now - this.brokerProvider.getLastSocketTickAt() <= 20000;
         const rateLimited = connected && this.brokerProvider.isRateLimited();
 
-        if (connected && !socketHealthy && !rateLimited && now - this.lastRestPoll >= 5000) {
-          // Safe 5s backup polling stays under daily quota across the full 6.25h session (~4,500 req/day)
+        if (this.activeClientCount > 0 && connected && !socketHealthy && !rateLimited && now - this.lastRestPoll >= 15000) {
+          // Ultra-safe 15s backup polling ONLY when viewers are active and WebSocket stream is silent (~4 req/min max)
           this.lastRestPoll = now;
           await this.syncQuotes();
         }
@@ -626,11 +705,11 @@ export class MarketEngine {
           rateLimited ||
           (this.consecutiveRestFailures >= 3 && now - this.lastDataUpdateAt > 15000);
 
-        if (needsPublicFallback) {
+        if (needsPublicFallback && this.activeClientCount > 0) {
           if (now - this.lastPublicCorePoll >= 15000) {
             this.lastPublicCorePoll = now;
             await this.syncPublicQuotes(true); // Keeps all 50 NIFTY Heatmap constituents live
-          } else if (now - this.lastPublicPoll >= 4000) {
+          } else if (now - this.lastPublicPoll >= 5000) {
             this.lastPublicPoll = now;
             await this.syncPublicQuotes(false);
           }
@@ -641,7 +720,7 @@ export class MarketEngine {
           this.lastPublicRefreshOffHours = now;
           await this.syncPublicQuotes(true);
         }
-        if (now - this.lastOffMarketBroadcast >= 15000) {
+        if (this.activeClientCount > 0 && now - this.lastOffMarketBroadcast >= 15000) {
           this.lastOffMarketBroadcast = now;
           const payload = this.buildPayload();
           this.notifyListeners(payload);
@@ -649,12 +728,22 @@ export class MarketEngine {
       }
     }, this.intervalMs);
 
-    // 2. Slower option chain sync loop (every 45 seconds during market hours)
+    // 2. Live 2-second option chain sync loop (runs ONLY when explicitly enabled by user)
     this.optionTimer = setInterval(async () => {
-      if (isIndianMarketOpen() && this.brokerProvider.isConnected() && !this.brokerProvider.isRateLimited()) {
-        await this.syncOptionChain();
+      if (
+        this.optionChainEnabled &&
+        this.activeClientCount > 0 &&
+        isIndianMarketOpen() &&
+        this.brokerProvider.isConnected() &&
+        !this.brokerProvider.isRateLimited()
+      ) {
+        const updated = await this.syncOptionChain();
+        if (updated) {
+          this.lastDataUpdateAt = Date.now();
+          this.notifyListeners(this.buildPayload());
+        }
       }
-    }, 45000);
+    }, 2000);
 
     console.log(`[MarketEngine] Market engine active with WebSocket stream & quota-safe fallback.`);
   }
@@ -846,7 +935,8 @@ export class MarketEngine {
       dataSource: this.brokerProvider.isConnected() && health.feedStatus === 'LIVE' ? 'FYERS' : 'PUBLIC',
       isBrokerConnected: this.brokerProvider.isConnected(),
       feedStatus: health.feedStatus,
-      lastDataUpdateAt: health.lastDataUpdateAt
+      lastDataUpdateAt: health.lastDataUpdateAt,
+      optionChainEnabled: this.optionChainEnabled
     };
   }
 }

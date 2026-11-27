@@ -68,16 +68,23 @@ export const IndicatorsModal: React.FC<IndicatorsModalProps> = ({
   initialIndicatorId
 }) => {
   const [selectedId, setSelectedId] = useState<string>('indicator-or-1h');
+  const prevOpenRef = useRef<boolean>(false);
+  const prevInitialIdRef = useRef<string | null | undefined>(initialIndicatorId);
 
   useEffect(() => {
-    if (isOpen) {
+    const justOpened = isOpen && !prevOpenRef.current;
+    const initChanged = initialIndicatorId !== prevInitialIdRef.current;
+    prevOpenRef.current = isOpen;
+    prevInitialIdRef.current = initialIndicatorId;
+
+    if (isOpen && (justOpened || initChanged)) {
       if (initialIndicatorId && indicators.some((i) => i.id === initialIndicatorId)) {
         setSelectedId(initialIndicatorId);
-      } else if (!indicators.some((i) => i.id === selectedId) && indicators.length > 0) {
+      } else if (justOpened && !indicators.some((i) => i.id === selectedId) && indicators.length > 0) {
         setSelectedId(indicators[0].id);
       }
     }
-  }, [isOpen, initialIndicatorId, indicators, selectedId]);
+  }, [isOpen, initialIndicatorId]);
 
   const emaList = useMemo(() => indicators.filter((i) => i.type === 'EMA'), [indicators]);
   const smaList = useMemo(() => indicators.filter((i) => i.type === 'SMA'), [indicators]);
@@ -747,6 +754,26 @@ export const IndicatorsModal: React.FC<IndicatorsModalProps> = ({
                         <ColorBoxPicker
                           color={selected.color || '#a855f7'}
                           onChange={(c) => handleUpdateField(selected.id, { color: c })}
+                        />
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{ fontSize: '0.72rem', color: '#CCCCCC', fontWeight: 600 }}>
+                          Upper Line ({selected.options.rsiOverbought ?? 70}) Color
+                        </span>
+                        <ColorBoxPicker
+                          color={selected.options.rsiOverboughtColor || '#c4b5fd'}
+                          onChange={(c) => handleUpdateOptions(selected.id, { rsiOverboughtColor: c })}
+                        />
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{ fontSize: '0.72rem', color: '#CCCCCC', fontWeight: 600 }}>
+                          Lower Line ({selected.options.rsiOversold ?? 30}) Color
+                        </span>
+                        <ColorBoxPicker
+                          color={selected.options.rsiOversoldColor || '#c4b5fd'}
+                          onChange={(c) => handleUpdateOptions(selected.id, { rsiOversoldColor: c })}
                         />
                       </div>
                     </>

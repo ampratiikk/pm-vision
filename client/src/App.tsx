@@ -14,6 +14,7 @@ import {
   fetchHealth,
   fetchMarketHistoryDetailed,
   fetchOptionChainByExpiry,
+  toggleOptionChainFeed,
   fetchMarketStatus,
   fetchInstrumentCatalog,
   fetchOnDemandQuotes
@@ -27,6 +28,7 @@ import {
   Time,
   CandleColorSettings,
   DEFAULT_CANDLE_COLORS,
+  DEFAULT_PANE_SEPARATOR_COLOR,
   IndicatorConfig,
   DEFAULT_INDICATORS
 } from './components/chart';
@@ -221,7 +223,6 @@ export function App() {
   const [isWatchlistOpen, setIsWatchlistOpen] = useState<boolean>(false);
   const [isWatchlistDropdownOpen, setIsWatchlistDropdownOpen] = useState<boolean>(false);
   const [watchlistMode, setWatchlistMode] = useState<WatchlistMode>('docked');
-  const [focusContext, setFocusContext] = useState<'chart' | 'watchlist'>('watchlist');
 
   const handleChangeDefaultWatchlist = (seg: WatchlistSegment) => {
     setDefaultWatchlist(seg);
@@ -229,6 +230,27 @@ export function App() {
     try {
       localStorage.setItem('pm_vision_default_watchlist', seg);
     } catch {}
+  };
+
+  // Option Chain Feed Enable/Disable (Disabled by default to conserve API quota)
+  const [optionChainEnabled, setOptionChainEnabled] = useState<boolean>(false);
+
+  const handleToggleOptionChain = async (nextEnabled: boolean) => {
+    setOptionChainEnabled(nextEnabled);
+    try {
+      const res = await toggleOptionChainFeed(nextEnabled);
+      if (typeof res.optionChainEnabled === 'boolean') {
+        setOptionChainEnabled(res.optionChainEnabled);
+      }
+      if (res.data) {
+        if (res.data.optionChain) setOptionChain(res.data.optionChain);
+        if (res.data.expiries && res.data.expiries.length > 0) setExpiries(res.data.expiries);
+        if (res.data.selectedExpiry) setSelectedExpiry(res.data.selectedExpiry);
+        if (typeof res.data.spotPrice === 'number' && res.data.spotPrice > 0) setSpotPrice(res.data.spotPrice);
+      }
+    } catch (err) {
+      console.error('Failed to toggle option chain feed:', err);
+    }
   };
 
   // Symbol Search State
@@ -240,16 +262,36 @@ export function App() {
   const activeChartSymbolRef = useRef(activeChartSymbol);
   activeChartSymbolRef.current = activeChartSymbol;
   const baseHistoryRef = useRef<CandlestickData<Time>[]>(SAMPLE_CANDLESTICK_DATA);
+  const historyStepTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleSelectSymbol = (symbol: string, name: string, sector: string, _basePrice: number) => {
+  const handleSelectSymbol = (
+    symbol: string,
+    name: string,
+    sector: string,
+    _basePrice: number,
+    deferHistory: boolean = false
+  ) => {
     setActiveChartSymbol(symbol);
     setActiveChartSymbolName(name);
     setActiveChartSymbolSector(sector);
     activeChartSymbolRef.current = symbol;
-    loadHistory(activeTimeFilterRef.current, symbol);
+
+    if (historyStepTimerRef.current) {
+      clearTimeout(historyStepTimerRef.current);
+      historyStepTimerRef.current = null;
+    }
+
+    if (deferHistory) {
+      historyStepTimerRef.current = setTimeout(() => {
+        historyStepTimerRef.current = null;
+        loadHistory(activeTimeFilterRef.current, symbol);
+      }, 180);
+    } else {
+      loadHistory(activeTimeFilterRef.current, symbol);
+    }
   };
 
-  // Candlestick Appearance Customization
+  // Candlestick & Chart Pane Separator Appearance Customization
   const [candleColors, setCandleColors] = useState<CandleColorSettings>(() => {
     try {
       const saved = localStorage.getItem('pm_vision_candle_colors');
@@ -258,6 +300,20 @@ export function App() {
       return DEFAULT_CANDLE_COLORS;
     }
   });
+  const [paneSeparatorColor, setPaneSeparatorColor] = useState<string>(() => {
+    try {
+      return localStorage.getItem('pm_vision_pane_separator_color') || DEFAULT_PANE_SEPARATOR_COLOR;
+    } catch {
+      return DEFAULT_PANE_SEPARATOR_COLOR;
+    }
+  });
+
+  const handleChangePaneSeparatorColor = (color: string) => {
+    setPaneSeparatorColor(color);
+    try {
+      localStorage.setItem('pm_vision_pane_separator_color', color);
+    } catch {}
+  };
 
   // Chart Right-Click Context Menu State
   const [contextMenu, setContextMenu] = useState<{ visible: boolean; x: number; y: number }>({
@@ -356,6 +412,9 @@ export function App() {
     }
     return Array.from(map.values());
   }, [securities, onDemandQuotes]);
+
+  const mergedSecuritiesRef = useRef(mergedSecurities);
+  mergedSecuritiesRef.current = mergedSecurities;
 
   // Chart Historical Data State
   const [chartCandles, setChartCandles] = useState<CandlestickData<Time>[]>([]);
@@ -487,8 +546,9 @@ export function App() {
   };
 
   const handleSelectExpiry = async (expiry: string) => {
+    setSelectedExpiry(expiry);
+    if (!optionChainEnabled) return;
     try {
-      setSelectedExpiry(expiry);
       const updated = await fetchOptionChainByExpiry(expiry);
       if (updated && updated.optionChain) {
         setOptionChain(updated.optionChain);
@@ -555,7 +615,7 @@ export function App() {
       const nextSym = watchlistOrderedSymbols[nextIdx];
       if (nextSym) {
         const meta = resolveSymbolMeta(nextSym);
-        handleSelectSymbol(meta.symbol, meta.name, meta.sector, meta.basePrice);
+        handleSelectSymbol(meta.symbol, meta.name, meta.sector, meta.basePrice, true);
       }
     },
     [watchlistOrderedSymbols, resolveSymbolMeta]
@@ -625,6 +685,28 @@ export function App() {
   // Global & TradingView-style Chart / Watchlist Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Esc always closes open Settings / Indicators modals cleanly (even if an input inside them has focus)
+      if (e.key === 'Escape') {
+        if (isSettingsOpen) {
+          e.preventDefault();
+          setIsSettingsOpen(false);
+          return;
+        }
+        if (isIndicatorsOpen) {
+          e.preventDefault();
+          setIsIndicatorsOpen(false);
+          setSelectedIndicatorId(null);
+          return;
+        }
+      }
+
+      // Alt+S opens/closes Settings window cleanly
+      if (e.altKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        setIsSettingsOpen((prev) => !prev);
+        return;
+      }
+
       const target = e.target as HTMLElement | null;
       if (
         target &&
@@ -663,7 +745,6 @@ export function App() {
             if (!prev) setWatchlistMode('docked');
             return !prev;
           });
-          setFocusContext('watchlist');
         }
         return;
       }
@@ -769,10 +850,8 @@ export function App() {
             chartRef.current?.zoomY(true);
           } else if (e.ctrlKey || e.metaKey) {
             chartRef.current?.zoomX(true);
-          } else if (focusContext === 'watchlist') {
-            stepWatchlistSymbol(-1);
           } else {
-            chartRef.current?.zoomX(true);
+            stepWatchlistSymbol(-1);
           }
           return;
         }
@@ -782,10 +861,8 @@ export function App() {
             chartRef.current?.zoomY(false);
           } else if (e.ctrlKey || e.metaKey) {
             chartRef.current?.zoomX(false);
-          } else if (focusContext === 'watchlist') {
-            stepWatchlistSymbol(1);
           } else {
-            chartRef.current?.zoomX(false);
+            stepWatchlistSymbol(1);
           }
           return;
         }
@@ -814,7 +891,6 @@ export function App() {
     isWatchlistOpen,
     isWatchlistDropdownOpen,
     activePage,
-    focusContext,
     handleTimeframeChange,
     stepWatchlistSymbol
   ]);
@@ -827,6 +903,9 @@ export function App() {
         .then((res) => {
           setIsBrokerConnected(Boolean(res.isBrokerConnected));
           setHasBrokerStatusLoaded(true);
+          if (typeof res.optionChainEnabled === 'boolean') {
+            setOptionChainEnabled(res.optionChainEnabled);
+          }
           if (res.feedStatus) setFeedStatus(res.feedStatus);
           if (res.session) {
             setSessionInfo(res.session);
@@ -864,6 +943,7 @@ export function App() {
             if (data.securities) setSecurities(data.securities);
             if (data.basisSpreads) setBasisSpreads(data.basisSpreads);
             if (data.optionChain) setOptionChain(data.optionChain);
+            if (typeof data.optionChainEnabled === 'boolean') setOptionChainEnabled(data.optionChainEnabled);
             if (typeof data.spotPrice === 'number' && data.spotPrice > 0) setSpotPrice(data.spotPrice);
 
             if (data.expiries && data.expiries.length > 0) setExpiries(data.expiries);
@@ -904,12 +984,19 @@ export function App() {
     };
   }, []);
 
-  // Dynamically subscribe to active symbol on WebSocket & hydrate on-demand quote whenever symbol changes
+  // Dynamically subscribe to active symbol on WebSocket & hydrate on-demand quote only if missing from live stream
   useEffect(() => {
-    if (activeChartSymbol) {
-      wsClientRef.current?.subscribe([activeChartSymbol]);
+    if (!activeChartSymbol) return;
+    wsClientRef.current?.subscribe([activeChartSymbol]);
+
+    const upper = activeChartSymbol.toUpperCase();
+    const cached = mergedSecuritiesRef.current.find((s) => s.symbol.toUpperCase() === upper);
+    if (cached && cached.ltp > 0) return;
+
+    const timer = setTimeout(() => {
       requestOnDemandQuotes([activeChartSymbol]);
-    }
+    }, 240);
+    return () => clearTimeout(timer);
   }, [activeChartSymbol, requestOnDemandQuotes]);
 
   // Global mouse move & up handlers for border dragging
@@ -1503,7 +1590,6 @@ export function App() {
                       } else {
                         setWatchlistMode('docked');
                         setIsWatchlistOpen(true);
-                        setFocusContext('watchlist');
                       }
                     }}
                     title="Toggle Watchlist Panel inside Chart (Alt+W)"
@@ -1538,7 +1624,6 @@ export function App() {
               <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden', position: 'relative' }}>
                 {/* Main Visual Display: Candlestick Chart */}
                 <div
-                  onMouseDown={() => setFocusContext('chart')}
                   onContextMenu={handleChartContextMenu}
                   style={{ flex: 1, position: 'relative', minWidth: 0, minHeight: 0 }}
                 >
@@ -1548,6 +1633,7 @@ export function App() {
                     casPrice={currentCasPrice}
                     timeframe={activeTimeFilter}
                     indicators={indicators}
+                    paneSeparatorColor={paneSeparatorColor}
                     height="100%"
                     style={{ height: '100%' }}
                     onToggleIndicatorVisibility={handleToggleIndicatorVisibility}
@@ -1673,15 +1759,11 @@ export function App() {
                         setWatchlistMode('docked');
                       }}
                       segment={watchlistSegment}
-                      onChangeSegment={(seg) => {
-                        setWatchlistSegment(seg);
-                        setFocusContext('watchlist');
-                      }}
+                      onChangeSegment={(seg) => setWatchlistSegment(seg)}
                       isSegmentMenuOpen={isWatchlistDropdownOpen}
                       onToggleSegmentMenu={(open) =>
                         setIsWatchlistDropdownOpen((prev) => (typeof open === 'boolean' ? open : !prev))
                       }
-                      onEngageWatchlist={() => setFocusContext('watchlist')}
                       securities={mergedSecurities}
                       catalog={catalog}
                       activeSymbol={activeChartSymbol}
@@ -1840,6 +1922,9 @@ export function App() {
                           expiries={expiries}
                           selectedExpiry={selectedExpiry}
                           onSelectExpiry={handleSelectExpiry}
+                          enabled={optionChainEnabled}
+                          onToggleEnabled={handleToggleOptionChain}
+                          isBrokerConnected={isBrokerConnected}
                         />
                       </div>
                     </>
@@ -2090,6 +2175,8 @@ export function App() {
         candleColors={candleColors}
         onUpdateCandleColors={handleUpdateCandleColors}
         onResetCandleColors={handleResetCandleColors}
+        paneSeparatorColor={paneSeparatorColor}
+        onChangePaneSeparatorColor={handleChangePaneSeparatorColor}
         defaultWatchlist={defaultWatchlist}
         onChangeDefaultWatchlist={handleChangeDefaultWatchlist}
         apiStatus={healthStatus}
@@ -2110,14 +2197,16 @@ export function App() {
               .then((cat) => setCatalog(cat))
               .catch(() => {});
           }
-          fetchOptionChainByExpiry('')
-            .then((d) => {
-              if (d?.optionChain) setOptionChain(d.optionChain);
-              if (d?.expiries && d.expiries.length > 0) setExpiries(d.expiries);
-              if (d?.selectedExpiry) setSelectedExpiry(d.selectedExpiry);
-              if (typeof d?.spotPrice === 'number' && d.spotPrice > 0) setSpotPrice(d.spotPrice);
-            })
-            .catch(() => {});
+          if (optionChainEnabled) {
+            fetchOptionChainByExpiry(selectedExpiry || '')
+              .then((d) => {
+                if (d?.optionChain) setOptionChain(d.optionChain);
+                if (d?.expiries && d.expiries.length > 0) setExpiries(d.expiries);
+                if (d?.selectedExpiry) setSelectedExpiry(d.selectedExpiry);
+                if (typeof d?.spotPrice === 'number' && d.spotPrice > 0) setSpotPrice(d.spotPrice);
+              })
+              .catch(() => {});
+          }
         }}
       />
     </div>

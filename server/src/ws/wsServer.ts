@@ -26,9 +26,18 @@ export function setupWebSocketServer(httpServer: HttpServer): WebSocketServer {
     });
   });
 
+  const syncClientCount = () => {
+    let openCount = 0;
+    wss.clients.forEach((c) => {
+      if (c.readyState === WebSocket.OPEN) openCount++;
+    });
+    marketEngine.setActiveClientCount(openCount);
+  };
+
   wss.on('connection', (ws: WebSocket) => {
     const clientId = crypto.randomUUID();
     (ws as any).isAlive = true;
+    syncClientCount();
 
     ws.on('pong', () => {
       (ws as any).isAlive = true;
@@ -75,7 +84,7 @@ export function setupWebSocketServer(httpServer: HttpServer): WebSocketServer {
     });
 
     ws.on('close', () => {
-      // Clean connection close
+      syncClientCount();
     });
 
     ws.on('error', (error) => {
@@ -85,9 +94,11 @@ export function setupWebSocketServer(httpServer: HttpServer): WebSocketServer {
 
   // Server-side keepalive ping every 25s (prevents Render.com idle connection terminations)
   const pingInterval = setInterval(() => {
+    let terminated = false;
     wss.clients.forEach((client) => {
       const c = client as any;
       if (c.isAlive === false) {
+        terminated = true;
         return client.terminate();
       }
       c.isAlive = false;
@@ -95,6 +106,7 @@ export function setupWebSocketServer(httpServer: HttpServer): WebSocketServer {
         client.ping();
       } catch {}
     });
+    if (terminated) syncClientCount();
   }, 25000);
 
   wss.on('close', () => {

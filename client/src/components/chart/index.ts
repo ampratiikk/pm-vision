@@ -1,6 +1,6 @@
 export { CandlestickChart } from './CandlestickChart';
 export { SAMPLE_CANDLESTICK_DATA } from './mockData';
-export { DEFAULT_CANDLE_COLORS, DEFAULT_INDICATORS } from './types';
+export { DEFAULT_CANDLE_COLORS, DEFAULT_PANE_SEPARATOR_COLOR, DEFAULT_INDICATORS } from './types';
 export type {
   CandlestickChartProps,
   ChartImperativeHandle,
